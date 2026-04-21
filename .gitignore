@@ -28,6 +28,17 @@ yarn-error.*
 
 # macOS
 .DS_Store
+
+# Google Play service account key
+cogoal-ff324dd0e375.json
+
+# env
+.env
+.env.local
+.env.production
+
+# Supabase
+supabase/.temp/
 *.pem
 
 # local env files
