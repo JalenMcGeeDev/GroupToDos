@@ -18,18 +18,30 @@
       "bundleIdentifier": "com.cogoal.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "runtimeVersion": {
+        "policy": "appVersion"
       }
     },
     "android": {
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
+      "notification": {
+        "icon": "./assets/notification-icon.png",
+        "color": "#3B82F6"
+      },
       "edgeToEdgeEnabled": true,
       "package": "com.cogoal.app",
       "permissions": [
+        "android.permission.RECORD_AUDIO",
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "runtimeVersion": {
+        "policy": "appVersion"
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -46,6 +58,9 @@
         "projectId": "65e294d7-83bc-4e1d-8d4a-de410a80d99d"
       }
     },
-    "owner": "jalenmcgeedev"
+    "owner": "jalenmcgeedev",
+    "updates": {
+      "url": "https://u.expo.dev/65e294d7-83bc-4e1d-8d4a-de410a80d99d"
+    }
   }
 }

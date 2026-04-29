@@ -44,7 +44,7 @@ export default function CreatePersonalGoalScreen() {
   const [title, setTitle] = useState('');
   const [dueDate, setDueDate] = useState<Date>(() => {
     const d = new Date();
-    d.setMonth(d.getMonth() + 1);
+    d.setDate(d.getDate() + 7);
     d.setHours(17, 0, 0, 0);
     return d;
   });
@@ -257,7 +257,7 @@ export default function CreatePersonalGoalScreen() {
               )}
               <Text
                 className={`text-xs font-semibold ml-1 ${
-                  title.trim().length > 0 ? 'text-blue-500' : 'text-gray-300'
+                  title.trim().length > 0 ? 'text-primary-600' : 'text-gray-300'
                 }`}
               >
                 {generateActions.isPending ? 'Generating...' : 'Generate actions'}

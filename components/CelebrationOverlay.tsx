@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Text, Pressable, Dimensions, Modal } from 'react-native';
 import LottieView from 'lottie-react-native';
-import { Audio } from 'expo-av';
+import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { usePreferencesStore } from '../stores/preferences-store';
 import { useCelebrationStore } from '../stores/celebration-store';
@@ -15,7 +15,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
 export function CelebrationOverlay() {
   const visible = useCelebrationStore((s) => s.visible);
   const hide = useCelebrationStore((s) => s.hide);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<AudioPlayer | null>(null);
   const celebrationSound = usePreferencesStore((s) => s.celebrationSound);
 
   useEffect(() => {
@@ -27,15 +27,14 @@ export function CelebrationOverlay() {
     // Play the selected celebration sound
     (async () => {
       try {
-        const { sound } = await Audio.Sound.createAsync(soundSource, {
-          shouldPlay: true,
-          volume: 0.8,
-        });
+        const player = createAudioPlayer(soundSource);
         if (!mounted) {
-          await sound.unloadAsync();
+          player.remove();
           return;
         }
-        soundRef.current = sound;
+        player.volume = 0.8;
+        player.play();
+        soundRef.current = player;
       } catch (e) {
         console.warn('Celebration sound failed:', e);
       }
@@ -53,11 +52,10 @@ export function CelebrationOverlay() {
     };
   }, [visible]);
 
-  const cleanupSound = async () => {
+  const cleanupSound = () => {
     if (soundRef.current) {
       try {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
+        soundRef.current.remove();
       } catch {
         // Ignore cleanup errors
       }

@@ -46,9 +46,10 @@ export default function CreateGoalScreen() {
   const generateActions = useGenerateActions();
 
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState<Date>(() => {
     const d = new Date();
-    d.setMonth(d.getMonth() + 1);
+    d.setDate(d.getDate() + 7);
     d.setHours(17, 0, 0, 0);
     return d;
   });
@@ -163,6 +164,7 @@ export default function CreateGoalScreen() {
       {
         groupId: id!,
         title: title.trim(),
+        description: description.trim() || undefined,
         startDate: now.toISOString().split('T')[0],
         endDate: dueDate.toISOString(),
         subGoals: validActions.map((a, i) => ({
@@ -211,12 +213,24 @@ export default function CreateGoalScreen() {
             What's the goal?
           </Text>
           <TextInput
-            className="text-lg font-semibold text-gray-900 py-3 border-b border-gray-100 mb-6"
+            className="text-lg font-semibold text-gray-900 py-3 border-b border-gray-100 mb-4"
             placeholder="e.g. Run a half marathon"
             placeholderTextColor="#D4D4D4"
             value={title}
             onChangeText={setTitle}
             autoFocus
+          />
+
+          {/* Description */}
+          <TextInput
+            className="text-sm text-gray-500 py-3 border-b border-gray-100 mb-6 leading-5"
+            placeholder="Description (optional)"
+            placeholderTextColor="#D4D4D4"
+            value={description}
+            onChangeText={setDescription}
+            multiline
+            blurOnSubmit={false}
+            returnKeyType="default"
           />
 
           {/* Due Date & Time */}
@@ -266,7 +280,7 @@ export default function CreateGoalScreen() {
               )}
               <Text
                 className={`text-xs font-semibold ml-1 ${
-                  title.trim().length > 0 ? 'text-blue-500' : 'text-gray-300'
+                  title.trim().length > 0 ? 'text-primary-600' : 'text-gray-300'
                 }`}
               >
                 {generateActions.isPending ? 'Generating...' : 'Generate actions'}

@@ -29,36 +29,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Set up the listener FIRST — Supabase fires INITIAL_SESSION immediately,
     // which gives us the persisted session without a race condition.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      async (event, session) => {
         set({ session, user: session?.user ?? null });
+
+        if (session?.user) {
+          await get().fetchProfile();
+        } else {
+          set({ profile: null });
+        }
 
         if (!get().initialized) {
           set({ initialized: true, isLoading: false });
         }
-
-        if (session?.user) {
-          get().fetchProfile();
-        } else {
-          set({ profile: null });
-        }
       }
     );
 
-    // Fallback: if onAuthStateChange hasn't fired yet (shouldn't happen, but just in case)
-    if (!get().initialized) {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!get().initialized) {
-        set({
-          session,
-          user: session?.user ?? null,
-          initialized: true,
-          isLoading: false,
-        });
-        if (session?.user) {
-          await get().fetchProfile();
-        }
-      }
-    }
+    // No fallback needed — Supabase v2 always fires INITIAL_SESSION via
+    // onAuthStateChange synchronously, so the listener above handles all cases.
   },
 
   setSession: (session) => {
@@ -79,7 +66,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       .eq('id', user.id)
       .single();
 
-    if (!error && data) {
+    if (error) {
+      console.warn('fetchProfile failed:', error.message);
+      return;
+    }
+    if (data) {
       set({ profile: data as Profile });
     }
   },
@@ -95,7 +86,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       .select()
       .single();
 
-    if (!error && data) {
+    if (error) {
+      console.warn('updateProfile failed:', error.message);
+      throw error;
+    }
+    if (data) {
       set({ profile: data as Profile });
     }
   },

@@ -17,11 +17,14 @@ import { useGoal, useUpdateSubGoal, useUpdateGoal, useCreateSubGoal, computeProg
 import { SubGoalTree } from '../../../../components/SubGoalTree';
 import { COLORS } from '../../../../constants';
 import { useAlert } from '../../../../components/AlertProvider';
+import { useAuthStore } from '../../../../stores/auth-store';
+import { supabase } from '../../../../lib/supabase';
 import type { SubGoal } from '../../../../lib/types';
 
 export default function GoalDetailScreen() {
   const { id, goalId } = useLocalSearchParams<{ id: string; goalId: string }>();
   const router = useRouter();
+  const currentUser = useAuthStore((s) => s.user);
 
   const { data: goal, isLoading, refetch } = useGoal(goalId!);
   const updateSubGoal = useUpdateSubGoal();
@@ -51,12 +54,33 @@ export default function GoalDetailScreen() {
 
   const handleToggleSubGoal = (subGoal: SubGoal) => {
     const newStatus = subGoal.status === 'completed' ? 'in_progress' : 'completed';
+
+    const willCompleteAll =
+      newStatus === 'completed' &&
+      (goal?.sub_goals ?? []).every((s) => s.id === subGoal.id || s.status === 'completed');
+
     updateSubGoal.mutate(
       {
         subGoalId: subGoal.id,
         updates: { status: newStatus },
       },
-      { onError: (err) => showAlert({ title: 'Error', message: err.message, icon: 'alert-circle' }) },
+      {
+        onSuccess: () => {
+          if (willCompleteAll && id) {
+            const name = currentUser?.user_metadata?.display_name ?? 'A teammate';
+            supabase.functions.invoke('send-group-push', {
+              body: {
+                group_id: id,
+                exclude_user_id: currentUser?.id ?? '',
+                title: '🏆 Goal completed!',
+                body: `${name} just completed a goal. Come congratulate them!`,
+                data: { type: 'goal_completed', group_id: id, goal_id: goalId },
+              },
+            }).catch(() => {/* non-blocking */});
+          }
+        },
+        onError: (err) => showAlert({ title: 'Error', message: err.message, icon: 'alert-circle' }),
+      },
     );
   };
 
@@ -183,12 +207,12 @@ export default function GoalDetailScreen() {
         <View className="flex-row items-center mb-3">
           <View
             className={`px-2.5 py-1 rounded-full ${
-              goal.status === 'completed' ? 'bg-green-100' : 'bg-blue-100'
+              goal.status === 'completed' ? 'bg-green-100' : 'bg-primary-100'
             }`}
           >
             <Text
               className={`text-xs font-bold uppercase tracking-wider ${
-                goal.status === 'completed' ? 'text-green-700' : 'text-blue-700'
+                goal.status === 'completed' ? 'text-green-700' : 'text-primary-700'
               }`}
             >
               {goal.status === 'completed' ? 'Completed' : goal.status.replace('_', ' ')}
@@ -284,7 +308,7 @@ export default function GoalDetailScreen() {
             style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 }}
             onPress={openGoalDatePicker}
           >
-            <View className="w-10 h-10 rounded-xl items-center justify-center" style={{ backgroundColor: '#EFF6FF' }}>
+            <View className="w-10 h-10 rounded-xl items-center justify-center" style={{ backgroundColor: '#FBF1EB' }}>
               <Feather name="calendar" size={16} color={COLORS.primary} />
             </View>
             <View className="flex-1 ml-3">

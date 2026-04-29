@@ -77,28 +77,37 @@ export function usePushNotifications() {
 
     // Listen for notifications received while app is foregrounded
     notificationListener.current = Notifications.addNotificationReceivedListener((notification) => {
-      const data = notification.request.content.data as Record<string, unknown> | undefined;
-      // Add to in-app notification store for real-time UI update
-      addNotification({
-        id: notification.request.identifier,
-        user_id: user.id,
-        type: (data?.type as string) ?? 'teammate_action',
-        title: notification.request.content.title ?? '',
-        body: notification.request.content.body ?? null,
-        data: data ?? {},
-        read: false,
-        created_at: new Date().toISOString(),
-      } as any);
+      try {
+        const data = (notification.request.content.data ?? {}) as Record<string, unknown>;
+        const type = typeof data.type === 'string' ? data.type : 'teammate_action';
+        addNotification({
+          id: notification.request.identifier,
+          user_id: user.id,
+          type,
+          title: notification.request.content.title ?? '',
+          body: notification.request.content.body ?? null,
+          data,
+          read: false,
+          created_at: new Date().toISOString(),
+        } as any);
+      } catch (e) {
+        console.warn('Failed to handle received notification:', e);
+      }
     });
 
     // Listen for notification taps (user presses the notification)
     responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data as Record<string, unknown> | undefined;
-      if (data?.group_id) {
+      try {
+        const data = (response.notification.request.content.data ?? {}) as Record<string, unknown>;
+        const groupId = typeof data.group_id === 'string' ? data.group_id : null;
+        const goalId = typeof data.goal_id === 'string' ? data.goal_id : null;
+        if (!groupId) return;
         router.push({
-          pathname: `/group/${data.group_id}` as any,
-          params: data?.goal_id ? { expandGoal: data.goal_id as string } : undefined,
+          pathname: `/group/${groupId}` as any,
+          params: goalId ? { expandGoal: goalId } : undefined,
         });
+      } catch (e) {
+        console.warn('Failed to handle notification tap:', e);
       }
     });
 

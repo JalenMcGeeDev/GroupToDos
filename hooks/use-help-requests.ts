@@ -10,19 +10,18 @@ import type { HelpRequest } from '../lib/types';
 export function useHelpRequests(goalId: string | undefined) {
   return useQuery({
     queryKey: ['help-requests', goalId],
-    queryFn: async (): Promise<HelpRequest | null> => {
-      if (!goalId) return null;
+    queryFn: async (): Promise<HelpRequest[]> => {
+      if (!goalId) return [];
 
       const { data, error } = await supabase
         .from('help_requests')
-        .select('*, requester_profile:profiles!help_requests_requested_by_fkey(*)')
+        .select('*, requester_profile:profiles!help_requests_requested_by_fkey(*), group:groups(id,name)')
         .eq('goal_id', goalId)
         .eq('resolved', false)
-        .order('created_at', { ascending: false })
-        .limit(1);
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
-      return (data?.[0] as HelpRequest) ?? null;
+      return (data as HelpRequest[]) ?? [];
     },
     enabled: !!goalId,
   });

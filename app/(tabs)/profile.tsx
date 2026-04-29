@@ -9,9 +9,14 @@ import {
   ActivityIndicator,
   Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
+import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
+import * as ExpoImagePicker from 'expo-image-picker';
+
+const isExpoGo = Constants.executionEnvironment === 'storeClient';
+const CROP_THEME = { cropperToolbarColor: '#C15F3C', cropperToolbarWidgetColor: '#FFFFFF', cropperTitleColor: '#FFFFFF' };
 import { decode } from 'base64-arraybuffer';
 import { useAuthStore } from '../../stores/auth-store';
 import { supabase } from '../../lib/supabase';
@@ -22,13 +27,14 @@ import { useGroups } from '../../hooks/use-groups';
 import { usePreferencesStore } from '../../stores/preferences-store';
 import { CELEBRATION_SOUNDS, DEFAULT_SOUND_KEY } from '../../constants/celebration-sounds';
 import type { CelebrationSoundKey } from '../../constants/celebration-sounds';
-import { Audio } from 'expo-av';
+import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
 import type { CheckinCadence } from '../../lib/types';
 
 const CADENCE_OPTIONS: CheckinCadence[] = ['daily', 'every_2_days', 'every_3_days', 'weekly'];
 
 export default function ProfileScreen() {
   const { profile, user, updateProfile, signOut } = useAuthStore();
+  const insets = useSafeAreaInsets();
   const { data: goals } = useMyGoals();
   const { data: groups } = useGroups();
 
@@ -40,14 +46,13 @@ export default function ProfileScreen() {
   const { showAlert } = useAlert();
   const celebrationSound = usePreferencesStore((s) => s.celebrationSound);
   const setCelebrationSound = usePreferencesStore((s) => s.setCelebrationSound);
-  const previewSoundRef = useRef<Audio.Sound | null>(null);
+  const previewSoundRef = useRef<AudioPlayer | null>(null);
 
-  const handleSoundSelect = async (key: CelebrationSoundKey) => {
+  const handleSoundSelect = (key: CelebrationSoundKey) => {
     // Stop any currently previewing sound
     if (previewSoundRef.current) {
       try {
-        await previewSoundRef.current.stopAsync();
-        await previewSoundRef.current.unloadAsync();
+        previewSoundRef.current.remove();
       } catch {}
       previewSoundRef.current = null;
     }
@@ -58,14 +63,13 @@ export default function ProfileScreen() {
     const entry = CELEBRATION_SOUNDS.find((s) => s.key === key);
     if (entry) {
       try {
-        const { sound } = await Audio.Sound.createAsync(entry.source, {
-          shouldPlay: true,
-          volume: 0.8,
-        });
-        previewSoundRef.current = sound;
-        sound.setOnPlaybackStatusUpdate((status) => {
-          if (status.isLoaded && status.didJustFinish) {
-            sound.unloadAsync();
+        const player = createAudioPlayer(entry.source);
+        previewSoundRef.current = player;
+        player.volume = 0.8;
+        player.play();
+        player.addListener('playbackStatusUpdate', (status) => {
+          if (status.didJustFinish) {
+            player.remove();
             previewSoundRef.current = null;
           }
         });
@@ -82,39 +86,52 @@ export default function ProfileScreen() {
     : '';
 
   const handlePickPhoto = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      showAlert({
-        title: 'Permission needed',
-        message: 'Please allow photo library access to set your profile photo.',
-        icon: 'image',
-        buttons: [{ text: 'OK' }],
+    let pickedUri: string | null = null;
+    let pickedBase64: string | null = null;
+
+    if (isExpoGo) {
+      const picked = await ExpoImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1] as [number, number],
+        quality: 0.7,
+        base64: true,
       });
-      return;
+      if (picked.canceled || !picked.assets[0]) return;
+      pickedUri = picked.assets[0].uri;
+      pickedBase64 = picked.assets[0].base64 ?? null;
+    } else {
+      try {
+        const ImageCropPicker = require('react-native-image-crop-picker').default;
+        const result = await ImageCropPicker.openPicker({
+          mediaType: 'photo',
+          cropping: true,
+          width: 400,
+          height: 400,
+          quality: 0.7,
+          includeBase64: true,
+          ...CROP_THEME,
+        });
+        pickedUri = result.path;
+        pickedBase64 = result.data ?? null;
+      } catch {
+        return;
+      }
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.7,
-      base64: true,
-    });
-
-    if (result.canceled || !result.assets[0]) return;
+    if (!pickedUri) return;
 
     setUploadingPhoto(true);
     try {
-      const asset = result.assets[0];
-      const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg';
+      const ext = pickedUri.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'jpg';
       const filePath = `${user!.id}/avatar.${ext}`;
 
-      const base64 = asset.base64;
+      const base64 = pickedBase64;
       if (!base64) throw new Error('Could not read image data');
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, decode(base64), { upsert: true, contentType: `image/${ext}` });
+        .upload(filePath, decode(base64), { upsert: true, contentType: ext === 'jpg' ? 'image/jpeg' : `image/${ext}` });
 
       if (uploadError) throw uploadError;
 
@@ -161,7 +178,57 @@ export default function ProfileScreen() {
       ],
     });
   };
+  const confirmDeleteAccount = async () => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Not authenticated');
 
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+      const res = await fetch(`${supabaseUrl}/functions/v1/delete-account`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? 'Failed to delete account');
+      }
+
+      await signOut();
+    } catch (err: any) {
+      showAlert({ title: 'Error', message: err.message ?? 'Could not delete account.', icon: 'alert-circle' });
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    showAlert({
+      title: 'Delete Account',
+      message:
+        'This will permanently delete your account and all your goals. Your groups will be transferred to another member, or deleted if you are the only one.',
+      icon: 'trash-2',
+      buttons: [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () =>
+            showAlert({
+              title: 'Are you absolutely sure?',
+              message: 'This cannot be undone. Your account will be permanently deleted.',
+              icon: 'alert-circle',
+              buttons: [
+                { text: 'Go back', style: 'cancel' },
+                { text: 'Delete my account', style: 'destructive', onPress: confirmDeleteAccount },
+              ],
+            }),
+        },
+      ],
+    });
+  };
   if (!profile) {
     return (
       <SafeAreaView className="flex-1 bg-gray-50 items-center justify-center">
@@ -187,7 +254,7 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50">
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 100 }} showsVerticalScrollIndicator={false}>
         {/* Profile Header Card */}
         <View className="bg-white px-6 pt-5 pb-7">
           <Text className="text-2xl font-bold text-gray-900 tracking-tight mb-6">Profile</Text>
@@ -396,6 +463,24 @@ export default function ProfileScreen() {
             </Text>
           </Pressable>
         </View>
+
+        {/* Delete Account */}
+        <View className="mx-5 mt-3 mb-2">
+          <Pressable
+            className="py-4 flex-row items-center justify-center rounded-2xl"
+            onPress={handleDeleteAccount}
+          >
+            <Feather name="trash-2" size={14} color="#A3A3A3" />
+            <Text className="text-sm font-medium ml-1.5" style={{ color: '#A3A3A3' }}>
+              Delete Account
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* Version */}
+        <Text style={{ textAlign: 'center', fontSize: 11, color: '#C7C0BA', marginBottom: 8 }}>
+          v{Constants.expoConfig?.version ?? '—'}{Updates.updateId ? ` (${Updates.updateId.slice(0, 8)})` : ''}
+        </Text>
       </ScrollView>
 
       {/* Streak Explanation Modal */}

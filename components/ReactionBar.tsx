@@ -10,9 +10,10 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface ReactionBarProps {
   goalId: string;
+  paddingStart?: number;
 }
 
-export function ReactionBar({ goalId }: ReactionBarProps) {
+export function ReactionBar({ goalId, paddingStart }: ReactionBarProps) {
   const { data: reactions = [] } = useGoalReactions(goalId);
   const toggleReaction = useToggleReaction();
   const [selectedGif, setSelectedGif] = useState<AggregatedReaction | null>(null);
@@ -35,7 +36,7 @@ export function ReactionBar({ goalId }: ReactionBarProps) {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 6 }}
+        contentContainerStyle={{ paddingLeft: paddingStart ?? 16, paddingRight: 16, paddingBottom: 8, gap: 6 }}
         className="flex-row"
       >
         {reactions.map((reaction) => (
@@ -150,7 +151,7 @@ function ReactionPill({
   return (
     <Pressable
       className={`flex-row items-center rounded-full px-2.5 py-1 border ${
-        reaction.reacted_by_me ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-gray-50'
+        reaction.reacted_by_me ? 'border-primary-300 bg-primary-50' : 'border-gray-200 bg-gray-50'
       }`}
       onPress={onPress}
     >
@@ -166,7 +167,7 @@ function ReactionPill({
       )}
       <Text
         className={`text-xs font-semibold ml-1 ${
-          reaction.reacted_by_me ? 'text-blue-600' : 'text-gray-500'
+          reaction.reacted_by_me ? 'text-primary-700' : 'text-gray-500'
         }`}
       >
         {reaction.count}

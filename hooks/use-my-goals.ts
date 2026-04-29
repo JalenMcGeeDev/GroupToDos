@@ -14,9 +14,10 @@ export function useMyGoals() {
 
       const { data, error } = await supabase
         .from('goals')
-        .select('*, sub_goals:sub_goals(*), group:groups!goals_group_id_fkey(name)')
+        .select('*, creator_profile:profiles!goals_created_by_fkey(*), sub_goals:sub_goals(*), group:groups!goals_group_id_fkey(name)')
         .eq('created_by', user.id)
-        .order('updated_at', { ascending: false });
+        .order('updated_at', { ascending: false })
+        .limit(200);
 
       if (error) throw error;
       return (data as Goal[]) ?? [];

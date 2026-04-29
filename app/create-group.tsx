@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Linking,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -19,6 +21,22 @@ import { useInviteToGroup } from '../hooks/use-invites';
 import { COLORS } from '../constants';
 import { useAlert } from '../components/AlertProvider';
 import type { InviteResult } from '../lib/types';
+
+type ContactRow = { id: string; name: string; phone: string };
+
+/** Strip everything but digits, then take the last 10 digits (US-only). */
+function normalizeUSPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  return digits.length >= 10 ? digits.slice(-10) : digits;
+}
+
+/** Format raw input as XXX-XXX-XXXX while typing. */
+function formatUSPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 10);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
 
 export default function CreateGroupScreen() {
   const router = useRouter();
@@ -32,15 +50,25 @@ export default function CreateGroupScreen() {
   const [createdGroupId, setCreatedGroupId] = useState<string | null>(null);
   const { showAlert } = useAlert();
 
-  const normalizePhone = (raw: string) => raw.replace(/[^\d]/g, '');
+  // Contacts picker modal state
+  const [contactsModalOpen, setContactsModalOpen] = useState(false);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [contacts, setContacts] = useState<ContactRow[]>([]);
+  const [contactSearch, setContactSearch] = useState('');
+
+  const onChangePhone = (text: string) => setPhoneInput(formatUSPhone(text));
 
   const addPhone = () => {
-    const phone = normalizePhone(phoneInput);
-    if (phone.length < 7) {
-      showAlert({ title: 'Invalid number', message: 'Please enter a valid phone number.', icon: 'alert-circle' });
+    const phone = normalizeUSPhone(phoneInput);
+    if (phone.length !== 10) {
+      showAlert({
+        title: 'Invalid number',
+        message: 'Please enter a 10-digit US phone number (e.g. 555-123-4567). Country code is added automatically.',
+        icon: 'alert-circle',
+      });
       return;
     }
-    if (invitees.some((i) => normalizePhone(i.phone) === phone)) {
+    if (invitees.some((i) => normalizeUSPhone(i.phone) === phone)) {
       showAlert({ title: 'Duplicate', message: 'This number has already been added.', icon: 'info' });
       setPhoneInput('');
       return;
@@ -53,52 +81,93 @@ export default function CreateGroupScreen() {
     setInvitees((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const pickFromContacts = async () => {
+  const openContactsPicker = async () => {
     const { status } = await Contacts.requestPermissionsAsync();
     if (status !== 'granted') {
-      showAlert({ title: 'Permission required', message: 'Please allow access to your contacts to invite people.', icon: 'info' });
+      showAlert({
+        title: 'Permission required',
+        message: 'Please allow access to your contacts to invite people.',
+        icon: 'info',
+      });
       return;
     }
 
-    const { data } = await Contacts.getContactsAsync({
-      fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name],
+    setContactsModalOpen(true);
+    setContactsLoading(true);
+    try {
+      // Page through ALL contacts so we don't silently truncate the list.
+      const pageSize = 500;
+      let pageOffset = 0;
+      const all: ContactRow[] = [];
+      // Loop until expo-contacts reports no more pages.
+      // hasNextPage is provided alongside `data`.
+       
+      while (true) {
+        const page = await Contacts.getContactsAsync({
+          fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name],
+          pageSize,
+          pageOffset,
+        });
+        for (const c of page.data) {
+          if (!c.phoneNumbers?.length) continue;
+          for (const pn of c.phoneNumbers) {
+            const norm = normalizeUSPhone(pn.number ?? '');
+            if (norm.length !== 10) continue;
+            all.push({
+              id: `${c.id}-${pn.id ?? norm}`,
+              name: c.name || pn.label || norm,
+              phone: norm,
+            });
+          }
+        }
+        if (!page.hasNextPage || !page.data.length) break;
+        pageOffset += pageSize;
+      }
+
+      // Dedupe by normalized phone, keep first occurrence
+      const seen = new Set<string>();
+      const deduped: ContactRow[] = [];
+      for (const c of all) {
+        if (seen.has(c.phone)) continue;
+        seen.add(c.phone);
+        deduped.push(c);
+      }
+      deduped.sort((a, b) => a.name.localeCompare(b.name));
+      setContacts(deduped);
+    } catch (e) {
+      showAlert({
+        title: 'Could not load contacts',
+        message: (e as Error).message,
+        icon: 'alert-circle',
+      });
+    } finally {
+      setContactsLoading(false);
+    }
+  };
+
+  const filteredContacts = useMemo(() => {
+    const q = contactSearch.trim().toLowerCase();
+    if (!q) return contacts;
+    const qDigits = q.replace(/\D/g, '');
+    return contacts.filter((c) => {
+      if (c.name.toLowerCase().includes(q)) return true;
+      if (qDigits && c.phone.includes(qDigits)) return true;
+      return false;
     });
+  }, [contacts, contactSearch]);
 
-    if (!data.length) {
-      showAlert({ title: 'No contacts', message: 'No contacts found on this device.', icon: 'info' });
-      return;
-    }
-
-    // Filter contacts that have phone numbers
-    const withPhones = data.filter((c) => c.phoneNumbers && c.phoneNumbers.length > 0);
-    if (!withPhones.length) {
-      showAlert({ title: 'No contacts', message: 'No contacts with phone numbers found.', icon: 'info' });
-      return;
-    }
-
-    // For now, show a simple selection of the first phone number per contact
-    // In a production app, you'd use a proper multi-select picker
-    const options = withPhones.slice(0, 50).map((c) => ({
-      text: `${c.name} (${c.phoneNumbers![0].number})`,
-      onPress: () => {
-        const phone = normalizePhone(c.phoneNumbers![0].number ?? '');
-        if (phone.length < 7) return;
-        if (invitees.some((i) => normalizePhone(i.phone) === phone)) return;
-        setInvitees((prev) => [...prev, { name: c.name ?? undefined, phone }]);
-      },
-    }));
-
-    // Show first 5 as branded alert buttons
-    showAlert({
-      title: 'Select a contact',
-      message: 'Choose someone to invite:',
-      icon: 'user-plus',
-      buttons: [
-        ...options.slice(0, 5).map((opt) => ({ text: opt.text, onPress: opt.onPress })),
-        { text: 'Cancel', style: 'cancel' as const },
-      ],
+  const toggleContact = (c: ContactRow) => {
+    setInvitees((prev) => {
+      const exists = prev.find((i) => normalizeUSPhone(i.phone) === c.phone);
+      if (exists) return prev.filter((i) => normalizeUSPhone(i.phone) !== c.phone);
+      return [...prev, { name: c.name, phone: c.phone }];
     });
   };
+
+  const inviteePhoneSet = useMemo(
+    () => new Set(invitees.map((i) => normalizeUSPhone(i.phone))),
+    [invitees]
+  );
 
   const openSmsComposer = (phone: string) => {
     const message = encodeURIComponent(
@@ -117,7 +186,7 @@ export default function CreateGroupScreen() {
     createGroup.mutate(
       {
         name: name.trim(),
-        invitePhones: invitees.map((i) => normalizePhone(i.phone)),
+        invitePhones: invitees.map((i) => normalizeUSPhone(i.phone)),
       },
       {
         onSuccess: async (group) => {
@@ -128,12 +197,13 @@ export default function CreateGroupScreen() {
 
           setCreatedGroupId(group.id);
 
-          // Send invites
+          // Send invites — phones are normalized to canonical 10-digit form
+          // here; the server adds the +1 country code at storage time.
           inviteToGroup.mutate(
             {
               groupId: group.id,
               phones: invitees.map((i) => ({
-                phone: normalizePhone(i.phone),
+                phone: normalizeUSPhone(i.phone),
                 name: i.name,
               })),
             },
@@ -161,7 +231,7 @@ export default function CreateGroupScreen() {
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+        <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
           {/* Header */}
           <View className="bg-white px-5 pt-3 pb-5" style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 }}>
             <View className="flex-row items-center">
@@ -229,7 +299,7 @@ export default function CreateGroupScreen() {
                       <Text className="text-base font-medium text-gray-900">{invitee.name}</Text>
                     )}
                     <Text className={`text-xs ${invitee.name ? 'text-gray-400' : 'text-base font-medium text-gray-900'}`}>
-                      {invitee.phone}
+                      {formatUSPhone(invitee.phone)}
                     </Text>
                   </View>
                   <Pressable
@@ -248,16 +318,20 @@ export default function CreateGroupScreen() {
 
               {/* Phone input row */}
               <View className="flex-row items-center">
-                <TextInput
-                  className="flex-1 bg-gray-50 rounded-xl px-3 py-2.5 text-base text-gray-900"
-                  placeholder="Phone number"
-                  placeholderTextColor="#A3A3A3"
-                  value={phoneInput}
-                  onChangeText={setPhoneInput}
-                  keyboardType="phone-pad"
-                  onSubmitEditing={addPhone}
-                  returnKeyType="done"
-                />
+                <View className="flex-1 flex-row items-center bg-gray-50 rounded-xl px-3">
+                  <Text className="text-base text-gray-400 mr-2">+1</Text>
+                  <TextInput
+                    className="flex-1 py-2.5 text-base text-gray-900"
+                    placeholder="555-123-4567"
+                    placeholderTextColor="#A3A3A3"
+                    value={phoneInput}
+                    onChangeText={onChangePhone}
+                    keyboardType="phone-pad"
+                    onSubmitEditing={addPhone}
+                    returnKeyType="done"
+                    maxLength={12}
+                  />
+                </View>
                 {phoneInput.trim().length > 0 && (
                   <Pressable
                     className="ml-2 w-9 h-9 rounded-xl items-center justify-center"
@@ -272,7 +346,7 @@ export default function CreateGroupScreen() {
               {/* Contacts button */}
               <Pressable
                 className="flex-row items-center justify-center mt-3 py-2.5 rounded-xl bg-gray-50"
-                onPress={pickFromContacts}
+                onPress={openContactsPicker}
               >
                 <Feather name="book" size={14} color={COLORS.primary} />
                 <Text className="text-base font-medium ml-2" style={{ color: COLORS.primary }}>
@@ -313,7 +387,7 @@ export default function CreateGroupScreen() {
                         </View>
                         <View className="flex-1 ml-3">
                           <Text className="text-base font-medium text-gray-900">
-                            {result.name ?? result.phone}
+                            {result.name ?? formatUSPhone(result.phone)}
                           </Text>
                           <Text className="text-xs text-gray-400 mt-0.5">
                             {result.isExistingUser
@@ -389,6 +463,111 @@ export default function CreateGroupScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Contacts picker modal */}
+      <Modal
+        visible={contactsModalOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setContactsModalOpen(false)}
+      >
+        <SafeAreaView className="flex-1 bg-white">
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+          <View className="flex-row items-center px-5 pt-3 pb-3 border-b border-gray-100">
+            <Pressable
+              className="w-10 h-10 rounded-full bg-gray-100 items-center justify-center mr-3"
+              onPress={() => setContactsModalOpen(false)}
+            >
+              <Feather name="x" size={18} color="#525252" />
+            </Pressable>
+            <Text className="text-xl font-bold text-gray-900 tracking-tight flex-1">
+              Choose Contacts
+            </Text>
+            <Pressable
+              className="px-3 py-2 rounded-xl"
+              style={{ backgroundColor: COLORS.primary }}
+              onPress={() => setContactsModalOpen(false)}
+            >
+              <Text className="text-white text-sm font-semibold">Done</Text>
+            </Pressable>
+          </View>
+
+          <View className="px-5 pt-3 pb-2">
+            <View className="flex-row items-center bg-gray-100 rounded-xl px-3 py-2">
+              <Feather name="search" size={16} color="#9CA3AF" />
+              <TextInput
+                className="flex-1 ml-2 text-base text-gray-900"
+                placeholder="Search contacts"
+                placeholderTextColor="#A3A3A3"
+                value={contactSearch}
+                onChangeText={setContactSearch}
+                autoCorrect={false}
+                autoCapitalize="none"
+              />
+              {contactSearch.length > 0 && (
+                <Pressable onPress={() => setContactSearch('')}>
+                  <Feather name="x-circle" size={16} color="#9CA3AF" />
+                </Pressable>
+              )}
+            </View>
+          </View>
+
+          {contactsLoading ? (
+            <View className="flex-1 items-center justify-center">
+              <ActivityIndicator color={COLORS.primary} />
+              <Text className="text-sm text-gray-400 mt-3">Loading contacts…</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={filteredContacts}
+              keyExtractor={(item) => item.id}
+              style={{ flex: 1 }}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                <View className="items-center py-16 px-8">
+                  <Feather name="users" size={28} color="#D4D4D4" />
+                  <Text className="text-base font-semibold text-gray-400 mt-3">
+                    {contacts.length === 0 ? 'No contacts found' : 'No matches'}
+                  </Text>
+                  <Text className="text-sm text-gray-300 text-center mt-1 leading-5">
+                    {contacts.length === 0
+                      ? 'No contacts with valid US phone numbers were found on this device.'
+                      : 'Try a different name or phone number.'}
+                  </Text>
+                </View>
+              }
+              renderItem={({ item }) => {
+                const selected = inviteePhoneSet.has(item.phone);
+                return (
+                  <Pressable
+                    className="flex-row items-center px-5 py-3"
+                    onPress={() => toggleContact(item)}
+                  >
+                    <View
+                      className="w-10 h-10 rounded-full items-center justify-center mr-3"
+                      style={{ backgroundColor: selected ? COLORS.primary + '15' : '#F3F4F6' }}
+                    >
+                      <Feather
+                        name={selected ? 'check' : 'user'}
+                        size={16}
+                        color={selected ? COLORS.primary : '#9CA3AF'}
+                      />
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-base font-medium text-gray-900">{item.name}</Text>
+                      <Text className="text-xs text-gray-400 mt-0.5">{formatUSPhone(item.phone)}</Text>
+                    </View>
+                  </Pressable>
+                );
+              }}
+            />
+          )}
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }

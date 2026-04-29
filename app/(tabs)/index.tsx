@@ -17,7 +17,6 @@ import { useMyGoals } from '../../hooks/use-my-goals';
 import { useMyPendingInvites } from '../../hooks/use-invites';
 import { useAuthStore } from '../../stores/auth-store';
 import { StreakIndicator } from '../../components/StreakIndicator';
-import { NotificationBell } from '../../components/NotificationBell';
 import { GoalCard } from '../../components/GoalCard';
 import { COLORS, CADENCE_LABELS } from '../../constants';
 import type { Goal } from '../../lib/types';
@@ -32,7 +31,6 @@ export default function YourGoalsScreen() {
   const { data: pendingInvites } = useMyPendingInvites();
   const profile = useAuthStore((s) => s.profile);
   const [refreshing, setRefreshing] = useState(false);
-  const [expandedGoalId, setExpandedGoalId] = useState<string | null>(null);
   const [streakModalOpen, setStreakModalOpen] = useState(false);
 
   const handleRefresh = async () => {
@@ -41,19 +39,8 @@ export default function YourGoalsScreen() {
     setRefreshing(false);
   };
 
-  const handleToggleExpand = useCallback((goalId: string) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpandedGoalId((prev) => (prev === goalId ? null : goalId));
-  }, []);
-
   const renderGoalCard = ({ item }: { item: Goal }) => {
-    return (
-      <GoalCard
-        goal={item}
-        isExpanded={expandedGoalId === item.id}
-        onToggleExpand={handleToggleExpand}
-      />
-    );
+    return <GoalCard goal={item} />;
   };
 
   return (
@@ -62,9 +49,11 @@ export default function YourGoalsScreen() {
       <View className="px-6 pt-4 pb-3">
         <View className="flex-row items-center justify-between">
           <View>
-            <Text className="text-base text-gray-400 font-medium">Welcome back</Text>
+            <Text className="text-base text-gray-400 font-medium">
+              Welcome back, {profile?.display_name?.split(' ')[0] ?? 'there'} 👋
+            </Text>
             <Text className="text-2xl font-bold text-gray-900 tracking-tight mt-0.5">
-              {profile?.display_name?.split(' ')[0] ?? 'there'}
+              Your Goals
             </Text>
           </View>
           <View className="flex-row items-center">
@@ -78,7 +67,13 @@ export default function YourGoalsScreen() {
               />
             )}
             <View className="ml-2">
-              <NotificationBell />
+              <Pressable
+                className="w-10 h-10 rounded-xl items-center justify-center"
+                style={{ backgroundColor: '#F3F4F6' }}
+                onPress={() => router.push('/goal/create' as any)}
+              >
+                <Feather name="plus" size={18} color="#525252" />
+              </Pressable>
             </View>
           </View>
         </View>
@@ -136,25 +131,6 @@ export default function YourGoalsScreen() {
         }
       />
 
-      {/* Create Goal FAB */}
-      <View className="absolute bottom-8 right-6">
-        <Pressable
-          className="flex-row items-center rounded-2xl px-5 py-3.5"
-          style={{
-            backgroundColor: COLORS.primary,
-            shadowColor: COLORS.primary,
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 12,
-            elevation: 5,
-          }}
-          onPress={() => router.push('/goal/create' as any)}
-        >
-          <Feather name="plus" size={18} color="#FFF" />
-          <Text className="text-white text-base font-semibold ml-2">New Goal</Text>
-        </Pressable>
-      </View>
-
       {/* Streak Explanation Modal */}
       <Modal
         visible={streakModalOpen}
@@ -166,24 +142,24 @@ export default function YourGoalsScreen() {
           className="flex-1 bg-black/40 items-center justify-center"
           onPress={() => setStreakModalOpen(false)}
         >
-          <Pressable className="bg-white rounded-2xl p-6 mx-8 w-full max-w-sm" onPress={() => {}}>
+          <Pressable className="bg-white rounded-2xl p-6 mx-6" style={{ width: '88%' }} onPress={() => {}}>
             <View className="items-center mb-4">
               <View
                 className="w-14 h-14 rounded-2xl items-center justify-center mb-3"
                 style={{ backgroundColor: '#FB923C15' }}
               >
-                <Feather name="zap" size={24} color="#FB923C" />
+                <Feather name="zap" size={26} color="#FB923C" />
               </View>
-              <Text className="text-lg font-bold text-gray-900">Your Streak</Text>
+              <Text style={{ fontSize: 20, fontWeight: '700', color: '#111827' }}>Your Streak 🔥</Text>
             </View>
-            <Text className="text-base text-gray-500 text-center leading-5 mb-1">
+            <Text style={{ fontSize: 16, color: '#6B7280', textAlign: 'center', lineHeight: 22, marginBottom: 4 }}>
               Your streak counts consecutive check-ins based on your cadence (currently:{' '}
-              <Text className="font-semibold text-gray-700">
+              <Text style={{ fontWeight: '600', color: '#374151' }}>
                 {CADENCE_LABELS[profile?.checkin_cadence ?? 'daily']?.toLowerCase() ?? 'daily'}
               </Text>
               ).
             </Text>
-            <Text className="text-base text-gray-500 text-center leading-5 mb-5">
+            <Text style={{ fontSize: 16, color: '#6B7280', textAlign: 'center', lineHeight: 22, marginBottom: 20 }}>
               Keep logging actions on time to grow your streak!
             </Text>
             <Pressable
@@ -194,14 +170,14 @@ export default function YourGoalsScreen() {
                 router.push('/(tabs)/profile' as any);
               }}
             >
-              <Feather name="settings" size={14} color="#FFF" />
-              <Text className="text-base font-semibold text-white ml-2">Adjust Check-in Cadence</Text>
+              <Feather name="settings" size={15} color="#FFF" />
+              <Text style={{ fontSize: 16, fontWeight: '600', color: '#fff', marginLeft: 8 }}>Adjust Check-in Cadence</Text>
             </Pressable>
             <Pressable
               className="py-2.5 items-center"
               onPress={() => setStreakModalOpen(false)}
             >
-              <Text className="text-base font-medium text-gray-400">Got it</Text>
+              <Text style={{ fontSize: 16, fontWeight: '500', color: '#9CA3AF' }}>Got it</Text>
             </Pressable>
           </Pressable>
         </Pressable>

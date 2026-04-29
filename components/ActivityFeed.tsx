@@ -12,17 +12,18 @@ interface ActivityFeedProps {
 
 const EVENT_CONFIG: Record<string, { icon: string; color: string; bg: string }> = {
   action_completed:        { icon: 'check-circle', color: '#16A34A', bg: '#DCFCE7' },
-  goal_created:            { icon: 'target',       color: '#3B82F6', bg: '#DBEAFE' },
+  goal_created:            { icon: 'target',       color: '#D97757', bg: '#FBE7DD' },
   goal_completed:          { icon: 'award',        color: '#F59E0B', bg: '#FEF3C7' },
   goal_shared:             { icon: 'share-2',      color: '#8B5CF6', bg: '#EDE9FE' },
   action_added:            { icon: 'plus-circle',  color: '#6B7280', bg: '#F3F4F6' },
-  action_due_date_changed: { icon: 'calendar',     color: '#3B82F6', bg: '#DBEAFE' },
+  action_due_date_changed: { icon: 'calendar',     color: '#D97757', bg: '#FBE7DD' },
   member_joined:           { icon: 'user-plus',    color: '#10B981', bg: '#D1FAE5' },
   member_left:             { icon: 'user-minus',    color: '#EF4444', bg: '#FEE2E2' },
   help_requested:          { icon: 'help-circle',  color: '#F97316', bg: '#FFF7ED' },
   help_resolved:           { icon: 'check-circle', color: '#16A34A', bg: '#DCFCE7' },
   help_offered:            { icon: 'life-buoy',    color: '#0D9488', bg: '#F0FDFA' },
   goal_reaction:           { icon: 'heart',        color: '#EC4899', bg: '#FDF2F8' },
+  goal_photo_added:        { icon: 'image',        color: '#8B5CF6', bg: '#EDE9FE' },
 };
 
 export function ActivityFeed({ items, isLoading, onRefresh, refreshing }: ActivityFeedProps) {
@@ -101,6 +102,15 @@ function TimelineItem({ item, isLast }: { item: FeedItem; isLast: boolean }) {
 
         {/* Event description */}
         <Text className="text-[13px] text-gray-600 leading-5">{item.title}</Text>
+
+        {/* Thumbnail for gallery photo entries */}
+        {item.type === 'goal_photo_added' && item.media_url && (
+          <Image
+            source={{ uri: item.media_url }}
+            className="w-24 h-24 rounded-xl mt-2"
+            resizeMode="cover"
+          />
+        )}
       </View>
     </View>
   );

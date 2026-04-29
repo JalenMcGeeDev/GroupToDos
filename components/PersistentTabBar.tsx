@@ -1,13 +1,13 @@
 import React from 'react';
-import { View, Pressable, Text, Platform } from 'react-native';
+import { View, Pressable, Text } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants';
 
 const TABS = [
-  { label: 'Your Goals', icon: 'target' as const, path: '/(tabs)' },
-  { label: 'Your Groups', icon: 'users' as const, path: '/(tabs)/groups' },
+  { label: 'Groups', icon: 'users' as const, path: '/(tabs)/groups' },
+  { label: 'Goals', icon: 'target' as const, path: '/(tabs)' },
   { label: 'Profile', icon: 'user' as const, path: '/(tabs)/profile' },
 ];
 
@@ -31,42 +31,75 @@ export function PersistentTabBar() {
 
   return (
     <View
+      pointerEvents="box-none"
       style={{
-        flexDirection: 'row',
-        backgroundColor: '#fff',
-        paddingBottom: insets.bottom,
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        paddingHorizontal: 20,
         paddingTop: 8,
-        borderTopWidth: 0,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -1 },
-        shadowOpacity: 0.04,
-        shadowRadius: 8,
-        elevation: 0,
+        paddingBottom: insets.bottom > 0 ? insets.bottom : 12,
+        backgroundColor: 'transparent',
       }}
     >
-      {TABS.map((tab) => {
-        const active = getIsActive(tab.path);
-        return (
-          <Pressable
-            key={tab.path}
-            style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 }}
-            onPress={() => router.navigate(tab.path as any)}
-          >
-            <Feather name={tab.icon} size={22} color={active ? COLORS.primary : '#A3A3A3'} />
-            <Text
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: '#FFFFFF',
+          borderRadius: 999,
+          paddingVertical: 8,
+          paddingHorizontal: 8,
+          shadowColor: '#1F1B17',
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.08,
+          shadowRadius: 20,
+          elevation: 10,
+          borderWidth: 1,
+          borderColor: '#F0EDE8',
+        }}
+      >
+        {TABS.map((tab) => {
+          const active = getIsActive(tab.path);
+          return (
+            <Pressable
+              key={tab.path}
               style={{
-                fontSize: 12,
-                fontWeight: '500',
-                letterSpacing: 0.2,
-                color: active ? COLORS.primary : '#A3A3A3',
-                marginTop: 2,
+                flex: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: 48,
+                borderRadius: 999,
+                backgroundColor: active ? COLORS.primary : 'transparent',
+                paddingHorizontal: 12,
               }}
+              onPress={() => router.navigate(tab.path as any)}
             >
-              {tab.label}
-            </Text>
-          </Pressable>
-        );
-      })}
+              <Feather
+                name={tab.icon}
+                size={20}
+                color={active ? '#FFFFFF' : '#7A716A'}
+              />
+              {active && (
+                <Text
+                  style={{
+                    marginLeft: 8,
+                    fontSize: 14,
+                    fontWeight: '600',
+                    color: '#FFFFFF',
+                    letterSpacing: 0.1,
+                  }}
+                  numberOfLines={1}
+                >
+                  {tab.label}
+                </Text>
+              )}
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }

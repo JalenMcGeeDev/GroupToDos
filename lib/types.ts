@@ -53,6 +53,7 @@ export interface Group {
   description: string | null;
   invite_code: string;
   created_by: string;
+  cover_image: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -80,10 +81,15 @@ export interface Goal {
   created_at: string;
   updated_at: string;
   last_action_at: string | null;
+  goal_activity_at: string | null;
   // Joined data
   creator_profile?: Profile;
   sub_goals?: SubGoal[];
   group?: { name: string } | null;
+  // Bundled lightweight counts (included when fetched via list queries)
+  goal_photos?: { id: string }[];
+  help_requests?: { id: string; resolved: boolean }[];
+  help_offers?: { id: string }[];
 }
 
 export interface SubGoal {
@@ -124,7 +130,8 @@ export interface Comment {
   user_id: string;
   target_type: CommentTargetType;
   target_id: string;
-  body: string;
+  body: string | null;
+  voice_url: string | null;
   created_at: string;
   profile?: Profile;
 }
@@ -158,6 +165,23 @@ export interface HabitLog {
   created_at: string;
 }
 
+export interface GoalPhoto {
+  id: string;
+  goal_id: string;
+  uploaded_by: string;
+  storage_url: string;
+  created_at: string;
+  uploader_profile?: Pick<Profile, 'id' | 'display_name' | 'avatar_url'>;
+}
+
+export interface GoalPhotoReaction {
+  id: string;
+  photo_id: string;
+  user_id: string;
+  reaction_type: string;
+  created_at: string;
+}
+
 // ---------- Activity Feed Item ----------
 
 export type GroupActivityType =
@@ -172,7 +196,8 @@ export type GroupActivityType =
   | 'help_requested'
   | 'help_resolved'
   | 'help_offered'
-  | 'goal_reaction';
+  | 'goal_reaction'
+  | 'goal_photo_added';
 
 export interface FeedItem {
   id: string;
@@ -223,6 +248,7 @@ export interface HelpRequest {
   resolved_at: string | null;
   created_at: string;
   requester_profile?: Profile;
+  group?: { id: string; name: string };
 }
 
 // ---------- Help Offers ----------
@@ -236,6 +262,7 @@ export interface HelpOffer {
   note: string;
   created_at: string;
   offerer_profile?: Profile;
+  group?: { id: string; name: string };
 }
 
 // ---------- Group Invites ----------
@@ -279,4 +306,12 @@ export interface PushToken {
 
 export interface GenerateActionsResponse {
   actions: { title: string }[];
+}
+
+// ---------- Goal Views (unseen dot tracking) ----------
+
+export interface GoalView {
+  user_id: string;
+  goal_id: string;
+  viewed_at: string;
 }

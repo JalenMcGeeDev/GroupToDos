@@ -63,39 +63,41 @@ serve(async (req) => {
       data: data ?? {},
     }));
 
-    // Send via Expo Push API
-    const response = await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Accept-Encoding': 'gzip, deflate',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(messages),
-    });
-
-    const result = await response.json();
-
-    // Clean up invalid tokens (DeviceNotRegistered errors)
-    if (result.data && Array.isArray(result.data)) {
-      const invalidTokens: string[] = [];
-      result.data.forEach((receipt: { status: string; details?: { error: string } }, idx: number) => {
-        if (receipt.status === 'error' && receipt.details?.error === 'DeviceNotRegistered') {
-          invalidTokens.push(tokens[idx].token);
-        }
+    // Send via Expo Push API in chunks of 100 (Expo's recommended batch size)
+    const CHUNK = 100;
+    const invalidTokens: string[] = [];
+    for (let i = 0; i < messages.length; i += CHUNK) {
+      const slice = messages.slice(i, i + CHUNK);
+      const response = await fetch('https://exp.host/--/api/v2/push/send', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Accept-Encoding': 'gzip, deflate',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(slice),
       });
-
-      if (invalidTokens.length > 0) {
-        await supabase
-          .from('push_tokens')
-          .delete()
-          .eq('user_id', user_id)
-          .in('token', invalidTokens);
+      const result = await response.json();
+      if (result.data && Array.isArray(result.data)) {
+        result.data.forEach((receipt: { status: string; details?: { error: string } }, idx: number) => {
+          if (receipt.status === 'error' && receipt.details?.error === 'DeviceNotRegistered') {
+            invalidTokens.push(tokens[i + idx].token);
+          }
+        });
       }
     }
 
+    // Clean up invalid tokens (DeviceNotRegistered errors)
+    if (invalidTokens.length > 0) {
+      await supabase
+        .from('push_tokens')
+        .delete()
+        .eq('user_id', user_id)
+        .in('token', invalidTokens);
+    }
+
     return new Response(
-      JSON.stringify({ sent: messages.length, result }),
+      JSON.stringify({ sent: messages.length, invalidated: invalidTokens.length }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {

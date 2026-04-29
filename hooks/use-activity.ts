@@ -29,7 +29,8 @@ export function useComments(targetType: string, targetId: string) {
         .select('*, profile:profiles(*)')
         .eq('target_type', targetType)
         .eq('target_id', targetId)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: true })
+        .limit(200);
 
       if (error) throw error;
       return (data as Comment[]) ?? [];
@@ -110,10 +111,11 @@ export function useLogAction() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['goals'] });
-      queryClient.invalidateQueries({ queryKey: ['goal'] });
-      queryClient.invalidateQueries({ queryKey: ['my-goals'] });
-      queryClient.invalidateQueries({ queryKey: ['activity-feed'] });
+      // Invalidate without forcing immediate refetch of inactive queries
+      queryClient.invalidateQueries({ queryKey: ['goals'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['goal'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['my-goals'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['activity-feed'], refetchType: 'active' });
       useAuthStore.getState().fetchProfile();
     },
   });

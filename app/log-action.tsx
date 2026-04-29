@@ -7,22 +7,29 @@ import {
   ScrollView,
   ActivityIndicator,
   Image,
+  Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
+import Constants from 'expo-constants';
+import * as ExpoImagePicker from 'expo-image-picker';
+
+const isExpoGo = Constants.executionEnvironment === 'storeClient';
+const CROP_THEME = { cropperToolbarColor: '#C15F3C', cropperToolbarWidgetColor: '#FFFFFF', cropperTitleColor: '#FFFFFF' };
 import { useGoal } from '../hooks/use-goals';
 import { useLogAction } from '../hooks/use-activity';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/auth-store';
 import { COLORS } from '../constants';
 import { useAlert } from '../components/AlertProvider';
+import { useAddGoalPhoto } from '../hooks/use-goal-gallery';
 import type { SubGoal } from '../lib/types';
 
 export default function LogActionScreen() {
   const { goalId, groupId } = useLocalSearchParams<{ goalId: string; groupId?: string }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const { data: goal } = useGoal(goalId!);
   const logAction = useLogAction();
@@ -33,27 +40,43 @@ export default function LogActionScreen() {
   const [uploading, setUploading] = useState(false);
   const { showAlert } = useAlert();
 
+  // Gallery prompt state (shown after successful check-in, only for goal creator)
+  const [showGalleryPrompt, setShowGalleryPrompt] = useState(false);
+  const [galleryImageUri, setGalleryImageUri] = useState<string | null>(null);
+  const addGalleryPhoto = useAddGoalPhoto(goalId ?? undefined);
+
   const allSubGoals = goal ? flattenSubGoals(goal.sub_goals ?? []) : [];
   const leafSubGoals = allSubGoals.filter(
     (sg) => !sg.children?.length || sg.children.length === 0
   );
 
   const handlePickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.7,
-      allowsEditing: true,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      setImageUri(result.assets[0].uri);
+    if (isExpoGo) {
+      const picked = await ExpoImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.7,
+        allowsEditing: true,
+      });
+      if (!picked.canceled && picked.assets[0]) setImageUri(picked.assets[0].uri);
+    } else {
+      try {
+        const ImageCropPicker = require('react-native-image-crop-picker').default;
+        const result = await ImageCropPicker.openPicker({
+          mediaType: 'photo',
+          cropping: true,
+          freeStyleCropEnabled: true,
+          quality: 0.7,
+          ...CROP_THEME,
+        });
+        setImageUri(result.path);
+      } catch { /* cancelled */ }
     }
   };
 
   const uploadImage = async (uri: string): Promise<string | null> => {
     if (!user) return null;
 
-    const ext = uri.split('.').pop() ?? 'jpg';
+    const ext = (uri.split('.').pop() ?? 'jpg').toLowerCase();
     const fileName = `${user.id}/${Date.now()}.${ext}`;
 
     const response = await fetch(uri);
@@ -61,7 +84,7 @@ export default function LogActionScreen() {
 
     const { error } = await supabase.storage
       .from('action-media')
-      .upload(fileName, blob, { contentType: `image/${ext}` });
+      .upload(fileName, blob, { contentType: ext === 'jpg' ? 'image/jpeg' : `image/${ext}` });
 
     if (error) {
       console.error('Upload error:', error);
@@ -95,12 +118,17 @@ export default function LogActionScreen() {
       {
         onSuccess: () => {
           setUploading(false);
-          showAlert({
-            title: 'Logged! \uD83C\uDF89',
-            message: 'Great job! Your action has been recorded.',
-            icon: 'check-circle',
-            buttons: [{ text: 'OK', onPress: () => router.back() }],
-          });
+          // If goal creator, prompt to add a gallery photo
+          if (user && goal && user.id === goal.created_by) {
+            setShowGalleryPrompt(true);
+          } else {
+            showAlert({
+              title: 'Logged! \uD83C\uDF89',
+              message: 'Great job! Your action has been recorded.',
+              icon: 'check-circle',
+              buttons: [{ text: 'OK', onPress: () => router.back() }],
+            });
+          }
         },
         onError: (err) => {
           setUploading(false);
@@ -111,6 +139,50 @@ export default function LogActionScreen() {
   };
 
   const isSubmitting = logAction.isPending || uploading;
+
+  const handlePickGalleryImage = async () => {
+    if (isExpoGo) {
+      const picked = await ExpoImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+        allowsEditing: true,
+      });
+      if (!picked.canceled && picked.assets[0]) setGalleryImageUri(picked.assets[0].uri);
+    } else {
+      try {
+        const ImageCropPicker = require('react-native-image-crop-picker').default;
+        const result = await ImageCropPicker.openPicker({
+          mediaType: 'photo',
+          cropping: true,
+          freeStyleCropEnabled: true,
+          quality: 0.8,
+          ...CROP_THEME,
+        });
+        setGalleryImageUri(result.path);
+      } catch { /* cancelled */ }
+    }
+  };
+
+  const handleSubmitGalleryPhoto = async () => {
+    if (!galleryImageUri) {
+      router.back();
+      return;
+    }
+    addGalleryPhoto.mutate(galleryImageUri, {
+      onSuccess: () => {
+        setShowGalleryPrompt(false);
+        router.back();
+      },
+      onError: (err) => {
+        showAlert({ title: 'Upload failed', message: err.message, icon: 'alert-circle' });
+      },
+    });
+  };
+
+  const handleSkipGallery = () => {
+    setShowGalleryPrompt(false);
+    router.back();
+  };
 
   return (
     <SafeAreaView className="flex-1 bg-white">
@@ -224,8 +296,8 @@ export default function LogActionScreen() {
 
       {/* Submit */}
       <View
-        className="absolute bottom-0 left-0 right-0 bg-white px-6 py-5"
-        style={{ shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 3 }}
+        className="absolute left-0 right-0 bg-white px-6 py-5"
+        style={{ bottom: insets.bottom > 0 ? 72 : 84, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 3 }}
       >
         <Pressable
           className="rounded-2xl py-4 items-center flex-row justify-center"
@@ -251,6 +323,85 @@ export default function LogActionScreen() {
           )}
         </Pressable>
       </View>
+
+      {/* Gallery prompt modal — shown to goal creator after a successful check-in */}
+      <Modal visible={showGalleryPrompt} transparent animationType="fade">
+        <Pressable className="flex-1 bg-black/40 justify-end" onPress={handleSkipGallery}>
+          <Pressable
+            className="bg-white rounded-t-2xl px-5 pt-5 pb-8"
+            onPress={() => {/* prevent dismiss */}}
+          >
+            {/* Handle */}
+            <View className="items-center mb-4">
+              <View className="w-10 h-1 rounded-full bg-gray-200" />
+            </View>
+
+            {/* Icon + heading */}
+            <View className="flex-row items-center mb-1">
+              <View className="w-10 h-10 rounded-xl bg-primary-50 items-center justify-center mr-3">
+                <Feather name="image" size={18} color={COLORS.primary} />
+              </View>
+              <View className="flex-1">
+                <Text className="text-lg font-bold text-gray-900">Add to Goal Gallery?</Text>
+                <Text className="text-xs text-gray-400 mt-0.5" numberOfLines={1}>
+                  {goal?.title}
+                </Text>
+              </View>
+            </View>
+
+            <Text className="text-sm text-gray-500 mb-4 mt-2 leading-5">
+              Capture a photo to show your group what you&apos;ve been working on.
+            </Text>
+
+            {/* Image preview or picker */}
+            {galleryImageUri ? (
+              <View className="mb-4">
+                <Image
+                  source={{ uri: galleryImageUri }}
+                  className="w-full h-44 rounded-2xl"
+                  resizeMode="cover"
+                />
+                <Pressable
+                  className="absolute top-2.5 right-2.5 w-8 h-8 rounded-xl bg-black/50 items-center justify-center"
+                  onPress={() => setGalleryImageUri(null)}
+                >
+                  <Feather name="x" size={14} color="#FFF" />
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                className="flex-row items-center justify-center py-8 rounded-2xl border border-dashed border-gray-200 bg-gray-50 mb-4"
+                onPress={handlePickGalleryImage}
+              >
+                <Feather name="camera" size={20} color="#D4D4D4" />
+                <Text className="text-base text-gray-400 ml-2">Choose a photo</Text>
+              </Pressable>
+            )}
+
+            {/* Actions */}
+            <View className="flex-row" style={{ gap: 10 }}>
+              <Pressable
+                className="flex-1 py-3 rounded-xl items-center bg-gray-100"
+                onPress={handleSkipGallery}
+              >
+                <Text className="text-base font-semibold text-gray-500">Skip</Text>
+              </Pressable>
+              <Pressable
+                className={`flex-1 py-3 rounded-xl items-center ${!galleryImageUri ? 'opacity-40' : ''}`}
+                style={{ backgroundColor: COLORS.primary }}
+                onPress={handleSubmitGalleryPhoto}
+                disabled={!galleryImageUri || addGalleryPhoto.isPending}
+              >
+                {addGalleryPhoto.isPending ? (
+                  <ActivityIndicator color="#FFF" />
+                ) : (
+                  <Text className="text-base font-semibold text-white">Add to Gallery</Text>
+                )}
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }

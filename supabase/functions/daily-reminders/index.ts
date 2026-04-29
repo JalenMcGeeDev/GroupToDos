@@ -30,20 +30,29 @@ serve(async (req) => {
     }
 
     const now = new Date();
+    const today = now.toISOString().split('T')[0];
     let remindersCreated = 0;
     let streaksBroken = 0;
 
-    for (const profile of profiles) {
-      if (!profile.last_action_date) continue;
+    // Pre-fetch users who already received a checkin reminder today, so we
+    // avoid one duplicate-check query per profile (was N+1 at scale).
+    const { data: alreadyReminded } = await supabase
+      .from('notifications')
+      .select('user_id')
+      .eq('type', 'checkin_reminder')
+      .gte('created_at', today);
+    const remindedSet = new Set((alreadyReminded ?? []).map((n: { user_id: string }) => n.user_id));
 
-      const lastAction = new Date(profile.last_action_date);
-      const daysSinceAction = Math.floor(
-        (now.getTime() - lastAction.getTime()) / (1000 * 60 * 60 * 24)
-      );
+    for (const profile of profiles) {
+      // Skip users who haven't set a cadence
+      if (!profile.checkin_cadence) continue;
 
       // Determine cadence in days
       let cadenceDays = 1;
       switch (profile.checkin_cadence) {
+        case 'daily':
+          cadenceDays = 1;
+          break;
         case 'every_2_days':
           cadenceDays = 2;
           break;
@@ -55,16 +64,62 @@ serve(async (req) => {
           break;
       }
 
-      // Send reminder when the check-in window is due
-      if (daysSinceAction >= cadenceDays) {
+      // Users who have never logged an action still need a reminder
+      if (!profile.last_action_date) {
+        if (remindedSet.has(profile.id)) continue;
+
         await supabase.from('notifications').insert({
           user_id: profile.id,
           type: 'checkin_reminder',
           title: '⏰ Time to check in!',
-          body: `It's been ${daysSinceAction} day${daysSinceAction !== 1 ? 's' : ''} since your last action. Keep your streak going!`,
-          data: { days_since: daysSinceAction },
+          body: "You haven't logged any actions yet. Start tracking your progress today!",
+          data: { days_since: null },
         });
+
+        await supabase.functions.invoke('send-push', {
+          body: {
+            user_id: profile.id,
+            title: '⏰ Time to check in!',
+            body: "You haven't logged any actions yet. Start tracking your progress today!",
+            data: { type: 'checkin_reminder' },
+          },
+        });
+
+        remindedSet.add(profile.id);
         remindersCreated++;
+        continue;
+      }
+
+      const lastAction = new Date(profile.last_action_date);
+      const daysSinceAction = Math.floor(
+        (now.getTime() - lastAction.getTime()) / (1000 * 60 * 60 * 24)
+      );
+
+      // Send reminder when the check-in window is due
+      if (daysSinceAction >= cadenceDays) {
+        if (!remindedSet.has(profile.id)) {
+          const body = `It's been ${daysSinceAction} day${daysSinceAction !== 1 ? 's' : ''} since your last action. Keep your streak going!`;
+
+          await supabase.from('notifications').insert({
+            user_id: profile.id,
+            type: 'checkin_reminder',
+            title: '⏰ Time to check in!',
+            body,
+            data: { days_since: daysSinceAction },
+          });
+
+          await supabase.functions.invoke('send-push', {
+            body: {
+              user_id: profile.id,
+              title: '⏰ Time to check in!',
+              body,
+              data: { type: 'checkin_reminder' },
+            },
+          });
+
+          remindedSet.add(profile.id);
+          remindersCreated++;
+        }
       }
 
       // Break streak immediately when window is missed (no grace period)

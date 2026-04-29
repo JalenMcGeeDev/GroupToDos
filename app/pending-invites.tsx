@@ -138,7 +138,7 @@ export default function PendingInvitesScreen() {
         data={invites}
         keyExtractor={(item) => item.id}
         renderItem={renderInvite}
-        contentContainerStyle={{ paddingTop: 8, paddingBottom: 32 }}
+        contentContainerStyle={{ paddingTop: 8, paddingBottom: 100 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={COLORS.primary} />
         }

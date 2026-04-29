@@ -3,53 +3,46 @@ import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/auth-store';
 import type { Goal, GoalWithSubGoals, SubGoal } from '../lib/types';
 
-const GOAL_SELECT = '*, creator_profile:profiles!goals_created_by_fkey(*), sub_goals:sub_goals(*)' as const;
+const GOAL_SELECT = '*, creator_profile:profiles!goals_created_by_fkey(*), sub_goals:sub_goals(*), goal_photos:goal_photos(id), help_requests:help_requests(id,resolved), help_offers:help_offers(id)' as const;
 
 export function useGoals(groupId: string) {
   return useQuery({
     queryKey: ['goals', groupId],
     queryFn: async (): Promise<Goal[]> => {
-      // Fetch goals directly in this group
-      const { data: directGoals, error: directError } = await supabase
-        .from('goals')
-        .select(GOAL_SELECT)
-        .eq('group_id', groupId)
-        .order('created_at', { ascending: false });
-
-      if (directError) throw directError;
-
-      // Fetch goals shared to this group
+      // Resolve shared goal ids first (one cheap lookup), then fetch all
+      // matching goals in a single query (direct + shared) to avoid N+1.
       const { data: shares, error: sharesError } = await supabase
         .from('goal_group_shares')
         .select('goal_id')
         .eq('group_id', groupId);
-
       if (sharesError) throw sharesError;
 
       const sharedGoalIds = (shares ?? []).map((s: { goal_id: string }) => s.goal_id);
-      let sharedGoals: Goal[] = [];
+
+      // Build OR filter: group_id eq groupId OR id in (sharedGoalIds)
+      let query = supabase
+        .from('goals')
+        .select(GOAL_SELECT)
+        .order('created_at', { ascending: false });
 
       if (sharedGoalIds.length > 0) {
-        const { data, error } = await supabase
-          .from('goals')
-          .select(GOAL_SELECT)
-          .in('id', sharedGoalIds)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        sharedGoals = (data as Goal[]) ?? [];
+        query = query.or(`group_id.eq.${groupId},id.in.(${sharedGoalIds.join(',')})`);
+      } else {
+        query = query.eq('group_id', groupId);
       }
 
-      // Merge and deduplicate
-      const allGoals = [...(directGoals as Goal[] ?? [])];
-      const existingIds = new Set(allGoals.map((g) => g.id));
-      for (const g of sharedGoals) {
-        if (!existingIds.has(g.id)) {
-          allGoals.push(g);
-        }
-      }
+      const { data, error } = await query;
+      if (error) throw error;
 
-      return allGoals;
+      // Deduplicate by id (a goal could match both clauses)
+      const seen = new Set<string>();
+      const result: Goal[] = [];
+      for (const g of (data as Goal[] | null) ?? []) {
+        if (seen.has(g.id)) continue;
+        seen.add(g.id);
+        result.push(g);
+      }
+      return result;
     },
     enabled: !!groupId,
   });
@@ -60,7 +53,7 @@ export function useGoal(goalId: string) {
     queryKey: ['goal', goalId],
     queryFn: async (): Promise<GoalWithSubGoals | null> => {
       const [{ data: goal, error: goalError }, { data: subGoals, error: sgError }] = await Promise.all([
-        supabase.from('goals').select('*').eq('id', goalId).single(),
+        supabase.from('goals').select('*, creator_profile:profiles!goals_created_by_fkey(*)').eq('id', goalId).single(),
         supabase
           .from('sub_goals')
           .select('*, assigned_profile:profiles!sub_goals_assigned_to_fkey(*)')
@@ -254,7 +247,8 @@ export function useDeleteGoal() {
       const { error } = await supabase.from('goals').delete().eq('id', goalId);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_, goalId) => {
+      queryClient.removeQueries({ queryKey: ['goal', goalId] });
       queryClient.invalidateQueries({ queryKey: ['goals'] });
       queryClient.invalidateQueries({ queryKey: ['my-goals'] });
     },

@@ -1,4 +1,4 @@
-import type { AVPlaybackSource } from 'expo-av';
+import type { AudioSource } from 'expo-audio';
 
 export type CelebrationSoundKey =
   | 'shine'
@@ -14,7 +14,7 @@ export type CelebrationSoundKey =
 export interface CelebrationSound {
   key: CelebrationSoundKey;
   label: string;
-  source: AVPlaybackSource;
+  source: AudioSource;
 }
 
 export const DEFAULT_SOUND_KEY: CelebrationSoundKey = 'shine';
@@ -31,6 +31,6 @@ export const CELEBRATION_SOUNDS: CelebrationSound[] = [
   { key: 'oh-yeah', label: 'Oh Yeah! 💪', source: require('../assets/sounds/oh-yeah.mp3') },
 ];
 
-export function getSoundSource(key: CelebrationSoundKey): AVPlaybackSource {
+export function getSoundSource(key: CelebrationSoundKey): AudioSource {
   return CELEBRATION_SOUNDS.find((s) => s.key === key)?.source ?? CELEBRATION_SOUNDS[0].source;
 }

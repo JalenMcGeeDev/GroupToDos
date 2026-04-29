@@ -1,8 +1,12 @@
 # get-logs.ps1 — Extract Android app logs over ADB wireless debugging
 # Package: com.cogoal.app
+# Usage: .\get-logs.ps1
+# Only prompts for the connection port. Always uses home IP, assumes device is paired.
 
 $PackageName = "com.cogoal.app"
-$LogDir = Join-Path (Join-Path $PSScriptRoot "..") "logs"
+$DeviceIp    = "192.168.1.190"
+$LogDir      = Join-Path (Join-Path $PSScriptRoot "..") "logs"
+$MinutesBack = 10
 
 # Locate adb - check PATH first, then common SDK locations
 $adb = Get-Command adb -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
@@ -37,43 +41,9 @@ $connectedDevice = ($devices -split "`n" | Where-Object { $_ -match '^\d+\.\d+\.
 if ($connectedDevice) {
     Write-Host "Already connected to $connectedDevice" -ForegroundColor Green
 } else {
-    # Ask if running from home network
-    $homeChoice = Read-Host "Are you on your home network? (y/n)"
-    if ($homeChoice -match '^[Yy]') {
-        $deviceIp = "192.168.1.190"
-        Write-Host "Using home IP: $deviceIp" -ForegroundColor Green
-    } else {
-        $deviceIp = $null
-    }
-
-    # --- 2. Pair ---
-    Write-Host "`n--- Pairing ---" -ForegroundColor Cyan
-    if ($deviceIp) {
-        $pairPort = Read-Host "Enter pairing port (from developer options)"
-        $pairAddr = "${deviceIp}:${pairPort}"
-    } else {
-        $pairAddr = Read-Host "Enter pairing address (IP:port from developer options)"
-    }
-    $pairCode = Read-Host "Enter 6-digit pairing code"
-
-    Write-Host "Pairing with $pairAddr ..." -ForegroundColor Yellow
-    $pairResult = & $adb pair $pairAddr $pairCode 2>&1 | Out-String
-
-    if ($pairResult -notmatch 'Successfully paired') {
-        Write-Host "Pairing failed:" -ForegroundColor Red
-        Write-Host $pairResult -ForegroundColor Red
-        exit 1
-    }
-    Write-Host "Pairing successful." -ForegroundColor Green
-
-    # --- 3. Connect ---
-    Write-Host "`n--- Connecting ---" -ForegroundColor Cyan
-    if ($deviceIp) {
-        $connectPort = Read-Host "Enter connection port (usually different from pairing port)"
-        $connectAddr = "${deviceIp}:${connectPort}"
-    } else {
-        $connectAddr = Read-Host "Enter connection address (IP:port - usually different port from pairing)"
-    }
+    # --- 2. Connect using home IP, device is already paired ---
+    $connectPort = Read-Host "Enter connection port (shown on the Wireless debugging screen)"
+    $connectAddr = "${DeviceIp}:${connectPort}"
 
     Write-Host "Connecting to $connectAddr ..." -ForegroundColor Yellow
     $connectResult = & $adb connect $connectAddr 2>&1 | Out-String
@@ -87,44 +57,54 @@ if ($connectedDevice) {
     $connectedDevice = $connectAddr
 }
 
-# --- 4. Extract logs ---
-Write-Host "`n--- Extracting Logs ---" -ForegroundColor Cyan
+# --- 3. Capture all logs from the last $MinutesBack minutes ---
+Write-Host "`n--- Capturing all logs from the last $MinutesBack minutes ---" -ForegroundColor Cyan
 
 $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
-$logFile = Join-Path $LogDir "logs_$timestamp.txt"
+$logFile   = Join-Path $LogDir "logs_$timestamp.txt"
 
-Write-Host "Looking for running process: $PackageName ..." -ForegroundColor Yellow
-$appPid = & $adb -s $connectedDevice shell pidof -s $PackageName 2>&1 | Out-String
-$appPid = $appPid.Trim()
+# logcat -t accepts "MM-DD HH:MM:SS.mmm" or a count; use time-based filter
+$since = (Get-Date).AddMinutes(-$MinutesBack).ToString("MM-dd HH:mm:ss.000")
+Write-Host "Fetching logs since $since ..." -ForegroundColor Yellow
 
-if ($appPid -match '^\d+$') {
-    Write-Host "App is running (PID: $appPid). Dumping filtered logcat..." -ForegroundColor Green
-    & $adb -s $connectedDevice logcat -d --pid=$appPid *:V 2>&1 | Out-File -FilePath $logFile -Encoding utf8
-} else {
-    Write-Host "App not running. Dumping all logcat and filtering by package name..." -ForegroundColor Yellow
-    & $adb -s $connectedDevice logcat -d *:V 2>&1 |
-        Select-String -Pattern $PackageName -SimpleMatch |
-        ForEach-Object { $_.Line } |
-        Out-File -FilePath $logFile -Encoding utf8
-}
+$rawLogs = & $adb -s $connectedDevice logcat -d -t $since *:V 2>&1
+
+$rawLogs | Out-File -FilePath $logFile -Encoding utf8
 
 $lineCount = (Get-Content $logFile | Measure-Object).Count
 Write-Host "Saved $lineCount lines to $logFile" -ForegroundColor Green
 
-# --- 5. Error summary ---
-Write-Host "`n--- Error / Warning Summary (last 30 matches) ---" -ForegroundColor Cyan
+# --- 4. App-specific summary ---
+$allLines = Get-Content $logFile
 
-$errorPatterns = ' E |E ReactNativeJS|W ReactNativeJS|ERROR|WARN'
-$errors = Get-Content $logFile |
-    Select-String -Pattern $errorPatterns |
-    Select-Object -Last 30
-
-if ($errors.Count -eq 0) {
-    Write-Host "No errors or warnings found." -ForegroundColor Green
+# Show last 40 lines from the app process (any level)
+Write-Host "`n--- Recent App Logs (last 40 lines from $PackageName) ---" -ForegroundColor Cyan
+$appLines = $allLines | Where-Object { $_ -match [regex]::Escape($PackageName) + "|ReactNativeJS|ReactNative|dev\.expo" } |
+    Select-Object -Last 40
+if ($appLines.Count -eq 0) {
+    Write-Host "No app log lines found in this window." -ForegroundColor Yellow
 } else {
-    Write-Host "Found $($errors.Count) error/warning lines:" -ForegroundColor Yellow
-    foreach ($line in $errors) {
-        if ($line -match 'ERROR|E ReactNativeJS| E ') {
+    foreach ($line in $appLines) {
+        if ($line -match ' E ') {
+            Write-Host $line -ForegroundColor Red
+        } elseif ($line -match ' W ') {
+            Write-Host $line -ForegroundColor Yellow
+        } else {
+            Write-Host $line -ForegroundColor Gray
+        }
+    }
+}
+
+# Show app errors/warnings separately
+Write-Host "`n--- App Errors / Warnings ---" -ForegroundColor Cyan
+$appErrors = $allLines |
+    Where-Object { ($_ -match [regex]::Escape($PackageName) + "|ReactNativeJS|dev\.expo") -and ($_ -match ' E | W ') } |
+    Select-Object -Last 20
+if ($appErrors.Count -eq 0) {
+    Write-Host "No app errors or warnings found." -ForegroundColor Green
+} else {
+    foreach ($line in $appErrors) {
+        if ($line -match ' E ') {
             Write-Host $line -ForegroundColor Red
         } else {
             Write-Host $line -ForegroundColor Yellow

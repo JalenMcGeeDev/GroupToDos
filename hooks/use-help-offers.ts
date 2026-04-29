@@ -15,7 +15,7 @@ export function useHelpOffers(goalId: string | undefined) {
 
       const { data, error } = await supabase
         .from('help_offers')
-        .select('*, offerer_profile:profiles!help_offers_offered_by_fkey(*)')
+        .select('*, offerer_profile:profiles!help_offers_offered_by_fkey(*), group:groups(id,name)')
         .eq('goal_id', goalId)
         .order('created_at', { ascending: false });
 

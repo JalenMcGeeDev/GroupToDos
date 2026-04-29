@@ -98,15 +98,19 @@ serve(async (req) => {
           },
         }));
 
-        await fetch('https://exp.host/--/api/v2/push/send', {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Accept-Encoding': 'gzip, deflate',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(messages),
-        });
+        // Chunk Expo push sends (max 100 per request)
+        const CHUNK = 100;
+        for (let i = 0; i < messages.length; i += CHUNK) {
+          await fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Accept-Encoding': 'gzip, deflate',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(messages.slice(i, i + CHUNK)),
+          });
+        }
 
         totalSent++;
       }

@@ -7,19 +7,25 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "channel": "development",
       "ios": {
         "simulator": true
       }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "channel": "preview"
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "channel": "production"
     }
   },
   "submit": {
     "production": {
+      "ios": {
+        "ascAppId": "6762568993"
+      },
       "android": {
         "serviceAccountKeyPath": "./cogoal-ff324dd0e375.json",
         "track": "alpha"

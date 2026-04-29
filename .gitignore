@@ -26,11 +26,24 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 
+# logs / debug artifacts
+logs/
+
 # macOS
 .DS_Store
 
 # Google Play service account key
 cogoal-ff324dd0e375.json
+
+# Firebase / Google Services config (do not commit)
+google-services.json
+GoogleService-Info.plist
+
+# EAS / native signing credentials (do not commit – rotate if leaked)
+credentials.json
+distribution.p12
+*.p8
+*.p12
 
 # env
 .env

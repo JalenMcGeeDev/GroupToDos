@@ -35,20 +35,27 @@ serve(async (req) => {
       console.error('Error fetching upcoming sub_goals:', upErr.message);
     }
 
+    // Pre-fetch sub_goal_ids that already have a due_date_reminder today
+    const upcomingIds = (upcoming ?? []).map((sg: any) => sg.id);
+    const sentReminderIds = new Set<string>();
+    if (upcomingIds.length > 0) {
+      const { data: existing } = await supabase
+        .from('notifications')
+        .select('data')
+        .eq('type', 'due_date_reminder')
+        .gte('created_at', today)
+        .in('data->>sub_goal_id', upcomingIds);
+      for (const row of existing ?? []) {
+        const id = (row as any).data?.sub_goal_id;
+        if (id) sentReminderIds.add(id);
+      }
+    }
+
     for (const sg of upcoming ?? []) {
       const goal = (sg as any).goals;
       if (!sg.assigned_to || !goal) continue;
 
-      // Avoid duplicate reminders – check if one was already sent today
-      const { count } = await supabase
-        .from('notifications')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', sg.assigned_to)
-        .eq('type', 'due_date_reminder')
-        .gte('created_at', today)
-        .eq('data->>sub_goal_id', sg.id);
-
-      if (count && count > 0) continue;
+      if (sentReminderIds.has(sg.id)) continue;
 
       // Create in-app notification
       await supabase.from('notifications').insert({
@@ -84,6 +91,21 @@ serve(async (req) => {
       console.error('Error fetching overdue sub_goals:', ovErr.message);
     }
 
+    // Pre-fetch already-notified overdue sub_goal_ids
+    const overdueIds = (overdue ?? []).map((sg: any) => sg.id);
+    const sentMissedIds = new Set<string>();
+    if (overdueIds.length > 0) {
+      const { data: existing } = await supabase
+        .from('notifications')
+        .select('data')
+        .eq('type', 'due_date_missed')
+        .in('data->>sub_goal_id', overdueIds);
+      for (const row of existing ?? []) {
+        const id = (row as any).data?.sub_goal_id;
+        if (id) sentMissedIds.add(id);
+      }
+    }
+
     for (const sg of overdue ?? []) {
       const goal = (sg as any).goals;
 
@@ -97,15 +119,7 @@ serve(async (req) => {
 
       if (!sg.assigned_to || !goal) continue;
 
-      // Avoid duplicate notifications
-      const { count } = await supabase
-        .from('notifications')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', sg.assigned_to)
-        .eq('type', 'due_date_missed')
-        .eq('data->>sub_goal_id', sg.id);
-
-      if (count && count > 0) continue;
+      if (sentMissedIds.has(sg.id)) continue;
 
       await supabase.from('notifications').insert({
         user_id: sg.assigned_to,

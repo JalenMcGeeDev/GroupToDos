@@ -29,32 +29,44 @@ export function useGroups() {
 
       if (error || !groups) return [];
 
-      // Fetch members and active goals for each group
-      const enriched = await Promise.all(
-        (groups as Group[]).map(async (group) => {
-          const [{ data: members }, { data: goals }] = await Promise.all([
-            supabase
-              .from('group_members')
-              .select('*, profile:profiles(*)')
-              .eq('group_id', group.id),
-            supabase
-              .from('goals')
-              .select('*')
-              .eq('group_id', group.id)
-              .eq('status', 'active')
-              .order('created_at', { ascending: false }),
-          ]);
+      // Batch fetch members + active goals for ALL groups in two queries (avoid N+1)
+      const [{ data: allMembers }, { data: allGoals }] = await Promise.all([
+        supabase
+          .from('group_members')
+          .select('*, profile:profiles(*)')
+          .in('group_id', groupIds),
+        supabase
+          .from('goals')
+          .select('*')
+          .in('group_id', groupIds)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false }),
+      ]);
 
-          return {
-            ...group,
-            members: (members as GroupMember[]) ?? [],
-            active_goals: (goals as Goal[]) ?? [],
-            member_count: members?.length ?? 0,
-          } satisfies GroupWithDetails;
-        })
-      );
+      const membersByGroup = new Map<string, GroupMember[]>();
+      for (const m of (allMembers as GroupMember[] | null) ?? []) {
+        const list = membersByGroup.get(m.group_id) ?? [];
+        list.push(m);
+        membersByGroup.set(m.group_id, list);
+      }
 
-      return enriched;
+      const goalsByGroup = new Map<string, Goal[]>();
+      for (const g of (allGoals as Goal[] | null) ?? []) {
+        if (!g.group_id) continue;
+        const list = goalsByGroup.get(g.group_id) ?? [];
+        list.push(g);
+        goalsByGroup.set(g.group_id, list);
+      }
+
+      return (groups as Group[]).map((group) => {
+        const members = membersByGroup.get(group.id) ?? [];
+        return {
+          ...group,
+          members,
+          active_goals: goalsByGroup.get(group.id) ?? [],
+          member_count: members.length,
+        } satisfies GroupWithDetails;
+      });
     },
     enabled: !!user,
   });
@@ -141,10 +153,14 @@ export function useUpdateGroup() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ groupId, name }: { groupId: string; name: string }) => {
+    mutationFn: async ({ groupId, name, cover_image }: { groupId: string; name?: string; cover_image?: string }) => {
+      const patch: Record<string, unknown> = {};
+      if (name !== undefined) patch.name = name;
+      if (cover_image !== undefined) patch.cover_image = cover_image;
+
       const { error } = await supabase
         .from('groups')
-        .update({ name })
+        .update(patch)
         .eq('id', groupId);
 
       if (error) throw error;

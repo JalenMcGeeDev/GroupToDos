@@ -12,6 +12,15 @@ export interface AggregatedReaction {
   reacted_by_me: boolean;
 }
 
+export interface RawReactionItem {
+  id: string;
+  user_id: string;
+  reaction_type: string;
+  created_at: string;
+  profile: Pick<Profile, 'id' | 'display_name' | 'avatar_url'>;
+  isOwn: boolean;
+}
+
 interface RawReaction {
   id: string;
   goal_id: string;
@@ -23,17 +32,19 @@ interface RawReaction {
 
 // ─── Fetch reactions for a goal ─────────────────────────────
 
-export function useGoalReactions(goalId: string) {
+export function useGoalReactions(goalId: string, enabled = true) {
   const currentUser = useAuthStore((s) => s.user);
 
   return useQuery({
     queryKey: ['reactions', goalId],
+    enabled: !!goalId && enabled,
     queryFn: async (): Promise<AggregatedReaction[]> => {
       const { data, error } = await supabase
         .from('goal_reactions')
         .select('id, goal_id, user_id, reaction_type, created_at, profile:profiles!goal_reactions_user_id_fkey(id, display_name, avatar_url)')
         .eq('goal_id', goalId)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: true })
+        .limit(500);
 
       if (error) throw error;
 
@@ -60,7 +71,29 @@ export function useGoalReactions(goalId: string) {
 
       return Array.from(grouped.values());
     },
-    enabled: !!goalId,
+  });
+}
+
+// ─── Fetch individual (non-aggregated) reactions ─────────────
+
+export function useGoalRawReactions(goalId: string, enabled = true) {
+  const currentUser = useAuthStore((s) => s.user);
+
+  return useQuery({
+    queryKey: ['reactions-raw', goalId],
+    enabled: !!goalId && enabled,
+    queryFn: async (): Promise<RawReactionItem[]> => {
+      const { data, error } = await supabase
+        .from('goal_reactions')
+        .select('id, user_id, reaction_type, created_at, profile:profiles!goal_reactions_user_id_fkey(id, display_name, avatar_url)')
+        .eq('goal_id', goalId)
+        .order('created_at', { ascending: true })
+        .limit(500);
+
+      if (error) throw error;
+      const raw = (data ?? []) as unknown as (Omit<RawReactionItem, 'isOwn'>)[];
+      return raw.map((r) => ({ ...r, isOwn: r.user_id === currentUser?.id }));
+    },
   });
 }
 
@@ -95,6 +128,7 @@ export function useAddReaction() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['reactions', variables.goalId] });
+      queryClient.invalidateQueries({ queryKey: ['reactions-raw', variables.goalId] });
       queryClient.invalidateQueries({ queryKey: ['activity-feed'] });
     },
   });
@@ -127,6 +161,7 @@ export function useRemoveReaction() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['reactions', variables.goalId] });
+      queryClient.invalidateQueries({ queryKey: ['reactions-raw', variables.goalId] });
       queryClient.invalidateQueries({ queryKey: ['activity-feed'] });
     },
   });

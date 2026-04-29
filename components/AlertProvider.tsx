@@ -64,11 +64,11 @@ export function AlertProvider({ children }: { children: React.ReactNode }) {
       'trash-2': { bg: '#FEF2F2', fg: '#EF4444' },
       'log-out': { bg: '#FEF2F2', fg: '#EF4444' },
       'check-circle': { bg: '#F0FDF4', fg: '#22C55E' },
-      'info': { bg: '#EFF6FF', fg: COLORS.primary },
-      'user-plus': { bg: '#EFF6FF', fg: COLORS.primary },
-      'users': { bg: '#EFF6FF', fg: COLORS.primary },
+      'info': { bg: '#FBF1EB', fg: COLORS.primary },
+      'user-plus': { bg: '#FBF1EB', fg: COLORS.primary },
+      'users': { bg: '#FBF1EB', fg: COLORS.primary },
     };
-    const colors = iconColorMap[resolved] ?? { bg: '#EFF6FF', fg: COLORS.primary };
+    const colors = iconColorMap[resolved] ?? { bg: '#FBF1EB', fg: COLORS.primary };
     return { name: resolved, ...colors };
   };
 
@@ -97,7 +97,6 @@ export function AlertProvider({ children }: { children: React.ReactNode }) {
               shadowOffset: { width: 0, height: 8 },
               shadowOpacity: 0.15,
               shadowRadius: 24,
-              elevation: 10,
             }}
           >
             {/* Icon */}
@@ -165,7 +164,7 @@ export function AlertProvider({ children }: { children: React.ReactNode }) {
                             alignItems: 'center',
                           }}
                         >
-                          <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+                          <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: '#FBF1EB', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
                             <Feather name="user" size={14} color={COLORS.primary} />
                           </View>
                           <Text style={{ color: '#171717', fontSize: 16, fontWeight: '500', flex: 1 }} numberOfLines={1}>

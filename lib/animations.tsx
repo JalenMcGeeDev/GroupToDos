@@ -135,7 +135,7 @@ interface AnimatedProgressBarProps {
   height?: number;
   /** Track color (default #F5F5F5) */
   trackColor?: string;
-  /** Fill color (default #3B82F6) */
+  /** Fill color (default #D97757) */
   fillColor?: string;
   /** Border radius (default 999) */
   borderRadius?: number;
@@ -146,7 +146,7 @@ export function AnimatedProgressBar({
   progress,
   height = 6,
   trackColor = '#F5F5F5',
-  fillColor = '#3B82F6',
+  fillColor = '#D97757',
   borderRadius = 999,
   delay = 200,
 }: AnimatedProgressBarProps) {
