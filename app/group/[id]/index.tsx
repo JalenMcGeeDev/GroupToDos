@@ -110,7 +110,7 @@ export default function GroupDetailScreen() {
   const handleShare = async () => {
     if (!group) return;
     await Share.share({
-      message: `Join my group "${group.name}" on CoGoal! Use invite code: ${group.invite_code}`,
+      message: `Join my group "${group.name}" on Cogo! Use invite code: ${group.invite_code}`,
     });
   };
 
@@ -232,7 +232,7 @@ export default function GroupDetailScreen() {
 
   const openSmsComposer = (phone: string) => {
     const message = encodeURIComponent(
-      `Hey! I invited you to join my group "${group?.name ?? ''}" on CoGoal. Download the app and sign up with this number!`
+      `Hey! I invited you to join my group "${group?.name ?? ''}" on Cogo. Download the app and sign up with this number!`
     );
     const separator = Platform.OS === 'ios' ? '&' : '?';
     Linking.openURL(`sms:${phone}${separator}body=${message}`);
@@ -666,8 +666,8 @@ export default function GroupDetailScreen() {
                         </Text>
                         <Text className="text-xs text-gray-400 mt-0.5">
                           {result.isExistingUser
-                            ? 'Has CoGoal — notification sent'
-                            : "Doesn't have CoGoal — invite saved"}
+                            ? 'Has Cogo — notification sent'
+                            : "Doesn't have Cogo — invite saved"}
                         </Text>
                       </View>
                       {!result.isExistingUser && (

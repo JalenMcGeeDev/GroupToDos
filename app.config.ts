@@ -2,7 +2,7 @@ import { ExpoConfig, ConfigContext } from "expo/config";
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: "CoGoals",
+  name: "Cogo",
   slug: "goals",
   version: "1.0.0",
   orientation: "portrait",
@@ -46,7 +46,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     favicon: "./assets/favicon.png",
     bundler: "metro",
   },
-  plugins: ["expo-router", "expo-notifications", "expo-image-picker"],
+  plugins: [
+    "expo-router",
+    "expo-notifications",
+    "expo-image-picker",
+    ["@sentry/react-native/expo", {
+      "organization": "mcg-works-llc",
+      "project": "react-native"
+    }],
+  ],
   extra: {
     router: {},
     eas: {

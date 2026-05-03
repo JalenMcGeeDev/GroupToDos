@@ -60,7 +60,7 @@ export default function LoginScreen() {
           >
             <Feather name="target" size={28} color="#FFF" />
           </View>
-          <Text className="text-3xl font-bold text-gray-900 tracking-tight">CoGoal</Text>
+          <Text className="text-3xl font-bold text-gray-900 tracking-tight">Cogo</Text>
           <Text className="text-base text-gray-400 mt-2">
             Enter your phone number to get started
           </Text>

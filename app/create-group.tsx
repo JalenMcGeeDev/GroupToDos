@@ -171,7 +171,7 @@ export default function CreateGroupScreen() {
 
   const openSmsComposer = (phone: string) => {
     const message = encodeURIComponent(
-      `Hey! I invited you to join my group on CoGoal. Download the app and sign up with this number to get started!`
+      `Hey! I invited you to join my group on Cogo. Download the app and sign up with this number to get started!`
     );
     const separator = Platform.OS === 'ios' ? '&' : '?';
     Linking.openURL(`sms:${phone}${separator}body=${message}`);
@@ -391,8 +391,8 @@ export default function CreateGroupScreen() {
                           </Text>
                           <Text className="text-xs text-gray-400 mt-0.5">
                             {result.isExistingUser
-                              ? 'Has CoGoal — notification sent'
-                              : "Doesn't have CoGoal yet — invite saved"}
+                              ? 'Has Cogo — notification sent'
+                              : "Doesn't have Cogo yet — invite saved"}
                           </Text>
                         </View>
                         {!result.isExistingUser && (
@@ -419,7 +419,7 @@ export default function CreateGroupScreen() {
                         .filter((r) => !r.isExistingUser)
                         .map((r) => r.phone);
                       const message = encodeURIComponent(
-                        `Hey! I invited you to join my group on CoGoal. Download the app and sign up with this number to get started!`
+                        `Hey! I invited you to join my group on Cogo. Download the app and sign up with this number to get started!`
                       );
                       const phones = nonUsers.join(',');
                       const separator = Platform.OS === 'ios' ? '&' : '?';
