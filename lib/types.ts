@@ -43,6 +43,7 @@ export interface Profile {
   streak_current: number;
   streak_longest: number;
   last_action_date: string | null;
+  timezone: string;
   created_at: string;
   updated_at: string;
 }
@@ -197,7 +198,8 @@ export type GroupActivityType =
   | 'help_resolved'
   | 'help_offered'
   | 'goal_reaction'
-  | 'goal_photo_added';
+  | 'goal_photo_added'
+  | 'intention_shared';
 
 export interface FeedItem {
   id: string;
@@ -274,6 +276,7 @@ export interface GroupInvite {
   group_id: string;
   invited_by: string;
   phone: string;
+  name: string | null;
   status: InviteStatus;
   resolved_user_id: string | null;
   expires_at: string;
@@ -306,6 +309,19 @@ export interface PushToken {
 
 export interface GenerateActionsResponse {
   actions: { title: string }[];
+}
+
+// ---------- Daily Intentions ----------
+
+export interface DailyIntention {
+  id: string;
+  user_id: string;
+  date: string; // ISO date 'YYYY-MM-DD'
+  text: string | null;
+  media_url: string | null;
+  media_type: 'video' | 'voice' | 'text' | null;
+  share_with_groups: boolean;
+  created_at: string;
 }
 
 // ---------- Goal Views (unseen dot tracking) ----------

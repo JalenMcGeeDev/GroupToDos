@@ -1,7 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import * as Sentry from '@sentry/react-native';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/auth-store';
 import type { Goal, GoalGroupShare, Group } from '../lib/types';
+import { writeGoalsCache, type WidgetGoal } from '../widget/widget-data';
+import { triggerAllWidgetUpdates } from '../widget/trigger-update';
 
 /** Fetch ALL goals created by the current user (personal + group-linked). */
 export function useMyGoals() {
@@ -20,7 +23,25 @@ export function useMyGoals() {
         .limit(200);
 
       if (error) throw error;
-      return (data as Goal[]) ?? [];
+      const goals = (data as Goal[]) ?? [];
+
+      // Keep the Android widget in sync — fire-and-forget, never blocks the query
+      const widgetGoals: WidgetGoal[] = goals
+        .filter((g) => g.status === 'active')
+        .map((g) => ({
+          id: g.id,
+          title: g.title,
+          due_date: g.end_date ?? null,
+          sub_goals: (g.sub_goals ?? []).map((sg) => ({
+            id: sg.id,
+            title: sg.title,
+            status: sg.status,
+            due_date: sg.due_date ?? null,
+          })),
+        }));
+      writeGoalsCache(widgetGoals).then(() => triggerAllWidgetUpdates(widgetGoals)).catch(() => {});
+
+      return goals;
     },
     enabled: !!user,
   });
@@ -65,6 +86,7 @@ export function useShareGoalToGroup() {
       if (error) throw error;
       return data as GoalGroupShare;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'shareGoalToGroup' } }); },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['goal-shares', variables.goalId] });
       queryClient.invalidateQueries({ queryKey: ['goals', variables.groupId] });
@@ -88,6 +110,7 @@ export function useUnshareGoalFromGroup() {
 
       if (error) throw error;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'unshareGoalFromGroup' } }); },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['goal-shares', variables.goalId] });
       queryClient.invalidateQueries({ queryKey: ['goals', variables.groupId] });

@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/auth-store';
+import * as Sentry from '@sentry/react-native';
+import posthog from '../lib/posthog';
 import type { Goal, GoalWithSubGoals, SubGoal } from '../lib/types';
 
 const GOAL_SELECT = '*, creator_profile:profiles!goals_created_by_fkey(*), sub_goals:sub_goals(*), goal_photos:goal_photos(id), help_requests:help_requests(id,resolved), help_offers:help_offers(id)' as const;
@@ -164,12 +166,21 @@ export function useCreateGoal() {
           });
         } catch (e) {
           console.warn('Failed to send goal creation push:', e);
+          Sentry.addBreadcrumb({ category: 'push', message: 'send-group-push edge function failed', level: 'warning', data: { groupId: input.groupId } });
         }
       }
 
       return goal as Goal;
     },
-    onSuccess: (_, variables) => {
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'createGoal' } }); },
+    onSuccess: (data, variables) => {
+      posthog.capture('goal_created', {
+        goal_id: data.id,
+        has_group: !!variables.groupId,
+        sub_goal_count: variables.subGoals.length,
+        has_end_date: !!variables.endDate,
+        has_reward: !!variables.tangibleReward,
+      });
       if (variables.groupId) {
         queryClient.invalidateQueries({ queryKey: ['goals', variables.groupId] });
         queryClient.invalidateQueries({ queryKey: ['group', variables.groupId] });
@@ -231,7 +242,9 @@ export function useUpdateGoal() {
       if (error) throw error;
       return data as Goal;
     },
-    onSuccess: (data) => {
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'updateGoal' } }); },
+    onSuccess: (data, variables) => {
+      posthog.capture('goal_updated', { goal_id: data.id, fields: Object.keys(variables.updates) });
       queryClient.invalidateQueries({ queryKey: ['goal', data.id] });
       queryClient.invalidateQueries({ queryKey: ['goals'] });
       queryClient.invalidateQueries({ queryKey: ['my-goals'] });
@@ -247,7 +260,9 @@ export function useDeleteGoal() {
       const { error } = await supabase.from('goals').delete().eq('id', goalId);
       if (error) throw error;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'deleteGoal' } }); },
     onSuccess: (_, goalId) => {
+      posthog.capture('goal_deleted', { goal_id: goalId });
       queryClient.removeQueries({ queryKey: ['goal', goalId] });
       queryClient.invalidateQueries({ queryKey: ['goals'] });
       queryClient.invalidateQueries({ queryKey: ['my-goals'] });
@@ -292,6 +307,7 @@ export function useUpdateSubGoal() {
       return { previous };
     },
     onError: (_err, _vars, context) => {
+      Sentry.captureException(_err, { tags: { mutation: 'updateSubGoal' } });
       // Roll back optimistic update on failure
       if (context?.previous) {
         for (const [key, data] of context.previous) {
@@ -365,6 +381,7 @@ export function useCreateSubGoal() {
       if (error || !data) throw error ?? new Error('Failed to create action');
       return data as SubGoal;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'createSubGoal' } }); },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['goal', variables.goalId] });
       queryClient.invalidateQueries({ queryKey: ['goals'] });

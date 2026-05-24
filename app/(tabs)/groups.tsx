@@ -19,9 +19,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import { useGroups, useLeaveGroup, useUpdateGroup } from '../../hooks/use-groups';
+import { useMyPendingInvites } from '../../hooks/use-invites';
 import { useAuthStore } from '../../stores/auth-store';
 import { StreakIndicator } from '../../components/StreakIndicator';
-import { COLORS, CADENCE_LABELS } from '../../constants';
+import { COLORS } from '../../constants';
 import { useAlert } from '../../components/AlertProvider';
 import { supabase } from '../../lib/supabase';
 import { decode } from 'base64-arraybuffer';
@@ -76,7 +77,6 @@ export default function GroupsScreen() {
   const profile = useAuthStore((s) => s.profile);
   const user = useAuthStore((s) => s.user);
   const [refreshing, setRefreshing] = useState(false);
-  const [streakModalOpen, setStreakModalOpen] = useState(false);
 
   // Long-press action sheet state
   const [selectedGroup, setSelectedGroup] = useState<GroupWithDetails | null>(null);
@@ -90,6 +90,7 @@ export default function GroupsScreen() {
   const leaveGroup = useLeaveGroup();
   const updateGroup = useUpdateGroup();
   const { showAlert } = useAlert();
+  const { data: pendingInvites } = useMyPendingInvites();
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -345,17 +346,18 @@ export default function GroupsScreen() {
                 currentStreak={profile.streak_current}
                 longestStreak={profile.streak_longest}
                 cadence={profile.checkin_cadence}
-                onPress={() => setStreakModalOpen(true)}
+                onPress={() => router.push('/check-in' as any)}
                 compact
               />
             )}
             <View className="ml-2">
               <Pressable
-                className="w-10 h-10 rounded-xl items-center justify-center"
+                className="flex-row items-center rounded-xl px-3 h-10"
                 style={{ backgroundColor: '#F3F4F6' }}
                 onPress={() => router.push('/create-group')}
               >
                 <Feather name="plus" size={18} color="#525252" />
+                <Text className="ml-1.5 text-sm font-semibold" style={{ color: '#525252' }}>Group</Text>
               </Pressable>
             </View>
           </View>
@@ -371,6 +373,25 @@ export default function GroupsScreen() {
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 22, paddingBottom: 120 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={COLORS.primary} />
+        }
+        ListHeaderComponent={
+          pendingInvites && pendingInvites.length > 0 ? (
+            <Pressable
+              style={{ marginBottom: 16, borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primary + '10' }}
+              onPress={() => router.push('/pending-invites' as any)}
+            >
+              <View style={{ width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12, backgroundColor: COLORS.primary + '20' }}>
+                <Feather name="user-plus" size={16} color={COLORS.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: '#111' }}>
+                  {pendingInvites.length} group invite{pendingInvites.length > 1 ? 's' : ''}
+                </Text>
+                <Text style={{ fontSize: 12, color: COLORS.textTertiary, marginTop: 2 }}>Tap to view and respond</Text>
+              </View>
+              <Feather name="chevron-right" size={16} color={COLORS.primary} />
+            </Pressable>
+          ) : null
         }
         ListEmptyComponent={
           isLoading ? (
@@ -605,57 +626,6 @@ export default function GroupsScreen() {
         </Pressable>
       </Modal>
 
-      {/* Streak Explanation Modal */}
-      <Modal
-        visible={streakModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setStreakModalOpen(false)}
-      >
-        <Pressable
-          className="flex-1 bg-black/40 items-center justify-center"
-          onPress={() => setStreakModalOpen(false)}
-        >
-          <Pressable className="bg-white rounded-2xl p-6 mx-6" style={{ width: '88%' }} onPress={() => {}}>
-            <View className="items-center mb-4">
-              <View
-                className="w-14 h-14 rounded-2xl items-center justify-center mb-3"
-                style={{ backgroundColor: '#FB923C15' }}
-              >
-                <Feather name="zap" size={26} color="#FB923C" />
-              </View>
-              <Text style={{ fontSize: 20, fontWeight: '700', color: '#111827' }}>Your Streak 🔥</Text>
-            </View>
-            <Text style={{ fontSize: 16, color: '#6B7280', textAlign: 'center', lineHeight: 22, marginBottom: 4 }}>
-              Your streak counts consecutive check-ins based on your cadence (currently:{' '}
-              <Text style={{ fontWeight: '600', color: '#374151' }}>
-                {CADENCE_LABELS[profile?.checkin_cadence ?? 'daily']?.toLowerCase() ?? 'daily'}
-              </Text>
-              ).
-            </Text>
-            <Text style={{ fontSize: 16, color: '#6B7280', textAlign: 'center', lineHeight: 22, marginBottom: 20 }}>
-              Keep logging actions on time to grow your streak!
-            </Text>
-            <Pressable
-              className="flex-row items-center justify-center py-3 rounded-xl mb-2"
-              style={{ backgroundColor: COLORS.primary }}
-              onPress={() => {
-                setStreakModalOpen(false);
-                router.push('/(tabs)/profile' as any);
-              }}
-            >
-              <Feather name="settings" size={15} color="#FFF" />
-              <Text style={{ fontSize: 16, fontWeight: '600', color: '#fff', marginLeft: 8 }}>Adjust Check-in Cadence</Text>
-            </Pressable>
-            <Pressable
-              className="py-2.5 items-center"
-              onPress={() => setStreakModalOpen(false)}
-            >
-              <Text style={{ fontSize: 16, fontWeight: '500', color: '#9CA3AF' }}>Got it</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </SafeAreaView>
   );
 }

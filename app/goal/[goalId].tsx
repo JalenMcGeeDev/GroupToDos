@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Platform,
   Modal,
+  KeyboardAvoidingView,
   Image,
   Animated,
 } from 'react-native';
@@ -18,8 +19,9 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { useGoal, useUpdateSubGoal, useUpdateGoal, useCreateSubGoal, useDeleteGoal, computeProgressFromTree } from '../../hooks/use-goals';
 import { useGoalShares, useShareGoalToGroup, useUnshareGoalFromGroup } from '../../hooks/use-my-goals';
 import { useGroups } from '../../hooks/use-groups';
+import { useGoalReminders, useAddReminder, useDeleteReminder } from '../../hooks/use-reminders';
 import { useHelpRequests, useAskForHelp, useResolveHelp } from '../../hooks/use-help-requests';
-import { useHelpOffers, useOfferHelp } from '../../hooks/use-help-offers';
+import { useHelpOffers, useOfferHelp, useDeleteHelpOffer } from '../../hooks/use-help-offers';
 import { useAddReaction } from '../../hooks/use-reactions';
 import { useMarkGoalViewed } from '../../hooks/use-goal-views';
 import { SubGoalTree } from '../../components/SubGoalTree';
@@ -83,8 +85,12 @@ export default function PersonalGoalDetailScreen() {
   const askForHelp = useAskForHelp();
   const resolveHelp = useResolveHelp();
   const offerHelp = useOfferHelp();
+  const deleteHelpOffer = useDeleteHelpOffer();
   const addReaction = useAddReaction();
   const markGoalViewed = useMarkGoalViewed();
+  const { data: reminders = [] } = useGoalReminders(goalId!);
+  const addReminder = useAddReminder();
+  const deleteReminder = useDeleteReminder();
 
   const isOwner = !isGroupContext || (goal ? currentUser?.id === goal.created_by : false);
 
@@ -123,6 +129,15 @@ export default function PersonalGoalDetailScreen() {
   const [showActionDatePicker, setShowActionDatePicker] = useState(false);
   const [selectedSubGoal, setSelectedSubGoal] = useState<SubGoal | null>(null);
   const [tempActionDate, setTempActionDate] = useState<Date>(new Date());
+
+  // Reminder picker state
+  const [showReminderPicker, setShowReminderPicker] = useState(false);
+  const [tempReminderDate, setTempReminderDate] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(d.getHours() + 1, 0, 0, 0);
+    return d;
+  });
+  const [reminderPickerStep, setReminderPickerStep] = useState<'date' | 'time'>('date');
 
   const [newActionTitle, setNewActionTitle] = useState('');
   const [showActionInput, setShowActionInput] = useState(false);
@@ -302,6 +317,65 @@ export default function PersonalGoalDetailScreen() {
     }
     setShowActionDatePicker(false);
     setSelectedSubGoal(null);
+  };
+
+  const onReminderDateChange = (_: DateTimePickerEvent, selected?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowReminderPicker(false);
+      if (selected) {
+        const d = new Date(selected);
+        d.setHours(tempReminderDate.getHours(), tempReminderDate.getMinutes(), 0, 0);
+        setTempReminderDate(d);
+        setReminderPickerStep('time');
+        setShowReminderPicker(true);
+      }
+    } else if (selected) {
+      setTempReminderDate(selected);
+    }
+  };
+
+  const onReminderTimeChange = (_: DateTimePickerEvent, selected?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowReminderPicker(false);
+      setReminderPickerStep('date');
+      if (selected) {
+        const d = new Date(tempReminderDate);
+        d.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+        addReminder.mutate(
+          { goalId: goalId!, remindAt: d },
+          {
+            onError: (err) => showAlert({
+              title: 'Could not set reminder',
+              message: (err as Error).message ?? 'Please try again.',
+              icon: 'alert-circle',
+              buttons: [{ text: 'OK' }],
+            }),
+          }
+        );
+      }
+    } else if (selected) {
+      setTempReminderDate(selected);
+    }
+  };
+
+  const confirmReminderDate = () => {
+    setReminderPickerStep('time');
+  };
+
+  const confirmReminderTime = () => {
+    setShowReminderPicker(false);
+    setReminderPickerStep('date');
+    addReminder.mutate(
+      { goalId: goalId!, remindAt: tempReminderDate },
+      {
+        onError: (err) => showAlert({
+          title: 'Could not set reminder',
+          message: (err as Error).message ?? 'Please try again.',
+          icon: 'alert-circle',
+          buttons: [{ text: 'OK' }],
+        }),
+      }
+    );
   };
 
   const handleAddAction = () => {
@@ -545,40 +619,79 @@ export default function PersonalGoalDetailScreen() {
           )}
         </Animated.View>
 
-        {/* Details card — Due date + Reward */}
+        {/* Due date card */}
         <View style={cardStyle}>
-          <Text style={[sectionTitleStyle, { marginBottom: 12 }]}>Details</Text>
-
+          <Text style={[sectionTitleStyle, { marginBottom: 4 }]}>Due date</Text>
           <Pressable
-            style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4 }}
+            style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10 }}
             onPress={isOwner ? openGoalDatePicker : undefined}
           >
-            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.borderLight, alignItems: 'center', justifyContent: 'center' }}>
-              <Feather name="calendar" size={16} color={COLORS.textSecondary} />
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={{ fontSize: 12, color: COLORS.textTertiary, marginBottom: 2 }}>Due date</Text>
-              <Text style={{ fontSize: 15, color: COLORS.text, fontWeight: '500' }}>
-                {goal.end_date
-                  ? new Date(goal.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                  : 'No due date'}
-              </Text>
-            </View>
-            {isOwner && <Feather name="chevron-right" size={18} color={COLORS.textTertiary} />}
+            <Feather name="calendar" size={15} color={COLORS.textTertiary} style={{ width: 20 }} />
+            <Text style={{ flex: 1, fontSize: 15, color: COLORS.text, marginLeft: 10 }}>
+              {goal.end_date
+                ? new Date(goal.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                : 'No due date'}
+            </Text>
+            {isOwner && <Feather name="chevron-right" size={16} color={COLORS.textTertiary} />}
           </Pressable>
 
           {goal.tangible_reward && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4, marginTop: 12, borderTopWidth: 1, borderTopColor: COLORS.borderLight, paddingTop: 16 }}>
-              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.borderLight, alignItems: 'center', justifyContent: 'center' }}>
-                <Feather name="gift" size={16} color={COLORS.textSecondary} />
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={{ fontSize: 12, color: COLORS.textTertiary, marginBottom: 2 }}>Reward</Text>
-                <Text style={{ fontSize: 15, color: COLORS.text, fontWeight: '500' }}>{goal.tangible_reward}</Text>
-              </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderTopColor: COLORS.borderLight }}>
+              <Feather name="gift" size={15} color={COLORS.textTertiary} style={{ width: 20 }} />
+              <Text style={{ flex: 1, fontSize: 15, color: COLORS.text, marginLeft: 10 }}>{goal.tangible_reward}</Text>
             </View>
           )}
         </View>
+
+        {/* Reminders card — owner only */}
+        {isOwner && (
+          <View style={cardStyle}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+              <Text style={[sectionTitleStyle, { flex: 1 }]}>Reminders</Text>
+              <Pressable
+                onPress={() => {
+                  const d = new Date();
+                  d.setHours(d.getHours() + 1, 0, 0, 0);
+                  setTempReminderDate(d);
+                  setReminderPickerStep('date');
+                  setShowReminderPicker(true);
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={cardActionTextStyle}>+ Add</Text>
+              </Pressable>
+            </View>
+
+            {reminders.length === 0 ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10 }}>
+                <Feather name="bell" size={15} color={COLORS.textTertiary} style={{ width: 20 }} />
+                <Text style={{ flex: 1, fontSize: 15, color: COLORS.textTertiary, marginLeft: 10 }}>No reminders</Text>
+              </View>
+            ) : (
+              reminders.map((r, i) => {
+                const date = new Date(r.remind_at);
+                const isPast = date < new Date();
+                return (
+                  <View key={r.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: COLORS.borderLight }}>
+                    <Feather name="bell" size={15} color={isPast ? COLORS.textTertiary : COLORS.textSecondary} style={{ width: 20 }} />
+                    <Text style={{ flex: 1, fontSize: 15, color: isPast ? COLORS.textTertiary : COLORS.text, marginLeft: 10 }}>
+                      {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      {'  ·  '}
+                      {date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                      {isPast ? '  ·  Past' : ''}
+                    </Text>
+                    <Pressable
+                      onPress={() => deleteReminder.mutate({ reminder: r })}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Feather name="x" size={16} color={COLORS.textTertiary} />
+                    </Pressable>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        )}
 
         {/* Groups card — personal context only */}
         {!isGroupContext && (
@@ -757,6 +870,29 @@ export default function PersonalGoalDetailScreen() {
                     </View>
                     <Text style={{ fontSize: 14, color: COLORS.textSecondary, marginTop: 2, lineHeight: 19 }}>{offer.note}</Text>
                   </View>
+                  {offer.offered_by === currentUser?.id && (
+                    <Pressable
+                      onPress={() =>
+                        showAlert({
+                          title: 'Delete Offer',
+                          message: 'Remove your offer of help?',
+                          icon: 'trash-2',
+                          buttons: [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Delete',
+                              style: 'destructive',
+                              onPress: () => deleteHelpOffer.mutate(offer.id),
+                            },
+                          ],
+                        })
+                      }
+                      hitSlop={8}
+                      style={{ padding: 4, marginLeft: 4 }}
+                    >
+                      <Feather name="trash-2" size={15} color={COLORS.textTertiary} />
+                    </Pressable>
+                  )}
                 </View>
               ))}
             </View>
@@ -815,6 +951,57 @@ export default function PersonalGoalDetailScreen() {
           </Pressable>
         )}
       </ScrollView>
+
+      {/* iOS Reminder Date Picker Modal */}
+      {Platform.OS === 'ios' && showReminderPicker && reminderPickerStep === 'date' && (
+        <Modal transparent animationType="slide">
+          <View className="flex-1 justify-end bg-black/30">
+            <View className="bg-white rounded-t-3xl px-6 pt-4 pb-8">
+              <View className="flex-row items-center justify-between mb-2">
+                <Text className="text-base font-semibold text-gray-900">Reminder date</Text>
+                <Pressable onPress={confirmReminderDate}>
+                  <Text style={{ color: COLORS.primary }} className="text-base font-semibold">Next</Text>
+                </Pressable>
+              </View>
+              <DateTimePicker
+                value={tempReminderDate}
+                mode="date"
+                display="spinner"
+                minimumDate={new Date()}
+                onChange={(_, d) => d && setTempReminderDate(d)}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
+      {Platform.OS === 'android' && showReminderPicker && reminderPickerStep === 'date' && (
+        <DateTimePicker value={tempReminderDate} mode="date" minimumDate={new Date()} onChange={onReminderDateChange} />
+      )}
+
+      {/* iOS Reminder Time Picker Modal */}
+      {Platform.OS === 'ios' && showReminderPicker && reminderPickerStep === 'time' && (
+        <Modal transparent animationType="slide">
+          <View className="flex-1 justify-end bg-black/30">
+            <View className="bg-white rounded-t-3xl px-6 pt-4 pb-8">
+              <View className="flex-row items-center justify-between mb-2">
+                <Text className="text-base font-semibold text-gray-900">Reminder time</Text>
+                <Pressable onPress={confirmReminderTime}>
+                  <Text style={{ color: COLORS.primary }} className="text-base font-semibold">Done</Text>
+                </Pressable>
+              </View>
+              <DateTimePicker
+                value={tempReminderDate}
+                mode="time"
+                display="spinner"
+                onChange={(_, d) => d && setTempReminderDate(d)}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
+      {Platform.OS === 'android' && showReminderPicker && reminderPickerStep === 'time' && (
+        <DateTimePicker value={tempReminderDate} mode="time" onChange={onReminderTimeChange} />
+      )}
 
       {/* iOS Goal DateTime Picker Modal */}
       {Platform.OS === 'ios' && showGoalDatePicker && (
@@ -906,6 +1093,10 @@ export default function PersonalGoalDetailScreen() {
       {/* Ask for Help modal */}
       {showHelpModal && (
         <Modal transparent animationType="fade">
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1 }}
+          >
           <Pressable className="flex-1 bg-black/30 justify-end" onPress={() => setShowHelpModal(false)}>
             <Pressable className="bg-white rounded-t-2xl px-5 pb-8 pt-5" onPress={() => {/* prevent dismiss */}}>
               <View className="flex-row items-center mb-4">
@@ -957,12 +1148,17 @@ export default function PersonalGoalDetailScreen() {
               </View>
             </Pressable>
           </Pressable>
+          </KeyboardAvoidingView>
         </Modal>
       )}
 
       {/* Offer Help modal */}
       {showOfferModal && (
         <Modal transparent animationType="fade">
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1 }}
+          >
           <Pressable className="flex-1 bg-black/30 justify-end" onPress={() => setShowOfferModal(false)}>
             <Pressable className="bg-white rounded-t-2xl px-5 pb-8 pt-5" onPress={() => {/* prevent dismiss */}}>
               <View className="flex-row items-center mb-4">
@@ -1014,6 +1210,7 @@ export default function PersonalGoalDetailScreen() {
               </View>
             </Pressable>
           </Pressable>
+          </KeyboardAvoidingView>
         </Modal>
       )}
     </SafeAreaView>

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import * as Sentry from '@sentry/react-native';
 import { Text, Pressable, Dimensions, Modal } from 'react-native';
 import LottieView from 'lottie-react-native';
 import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
@@ -37,6 +38,7 @@ export function CelebrationOverlay() {
         soundRef.current = player;
       } catch (e) {
         console.warn('Celebration sound failed:', e);
+        Sentry.captureException(e, { tags: { context: 'celebrationSound' } });
       }
     })();
 

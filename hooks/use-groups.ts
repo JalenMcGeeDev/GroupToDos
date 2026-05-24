@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/auth-store';
+import * as Sentry from '@sentry/react-native';
+import posthog from '../lib/posthog';
 import type { Group, GroupMember, GroupWithDetails, Goal } from '../lib/types';
 
 export function useGroups() {
@@ -125,7 +127,9 @@ export function useCreateGroup() {
 
       return data as Group;
     },
-    onSuccess: () => {
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'createGroup' } }); },
+    onSuccess: (data) => {
+      posthog.capture('group_created', { group_id: data.id, group_name: data.name });
       queryClient.invalidateQueries({ queryKey: ['groups'] });
     },
   });
@@ -143,7 +147,10 @@ export function useJoinGroup() {
       if (error) throw error;
       return data as { group_id: string };
     },
-    onSuccess: () => {
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'joinGroup' } }); },
+    onSuccess: (data) => {
+      Sentry.addBreadcrumb({ category: 'group', message: 'User joined a group', level: 'info', data: { group_id: data?.group_id } });
+      posthog.capture('group_joined', { group_id: data?.group_id });
       queryClient.invalidateQueries({ queryKey: ['groups'] });
     },
   });
@@ -165,6 +172,7 @@ export function useUpdateGroup() {
 
       if (error) throw error;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'updateGroup' } }); },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       queryClient.invalidateQueries({ queryKey: ['group', variables.groupId] });
@@ -188,7 +196,9 @@ export function useLeaveGroup() {
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'leaveGroup' } }); },
+    onSuccess: (_, variables) => {
+      posthog.capture('group_left', { group_id: variables.groupId });
       queryClient.invalidateQueries({ queryKey: ['groups'] });
     },
   });

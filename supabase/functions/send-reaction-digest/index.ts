@@ -85,6 +85,15 @@ serve(async (req) => {
         .select('token')
         .eq('user_id', goal.created_by);
 
+      // Always write an in-app notification for the goal owner
+      await supabase.from('notifications').insert({
+        user_id: goal.created_by,
+        type: 'goal_reaction',
+        title: '💬 New reactions on your goal',
+        body,
+        data: { type: 'goal_reaction', goal_id: goalId, group_id: goal.group_id },
+      });
+
       if (tokens && tokens.length > 0) {
         const messages = tokens.map((t: { token: string }) => ({
           to: t.token,

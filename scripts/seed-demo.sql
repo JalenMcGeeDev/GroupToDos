@@ -61,11 +61,18 @@ DECLARE
 
 BEGIN
   -- ==========================================
-  -- Find jalenmcgee
+  -- Find demo user by phone number
   -- ==========================================
-  SELECT id INTO v_jalen_id FROM public.profiles WHERE display_name = 'jalenmcgee';
+  -- Try exact phone format first, then without leading +
+  SELECT id INTO v_jalen_id FROM auth.users WHERE phone = '+10000000000';
   IF v_jalen_id IS NULL THEN
-    RAISE EXCEPTION 'No user with display_name "jalenmcgee" found. Sign up first.';
+    SELECT id INTO v_jalen_id FROM auth.users WHERE phone = '10000000000';
+  END IF;
+  IF v_jalen_id IS NULL THEN
+    SELECT id INTO v_jalen_id FROM auth.users WHERE phone LIKE '%0000000000';
+  END IF;
+  IF v_jalen_id IS NULL THEN
+    RAISE EXCEPTION 'No user with phone +10000000000 found. Sign up first.';
   END IF;
   RAISE NOTICE 'Found user: %', v_jalen_id;
 

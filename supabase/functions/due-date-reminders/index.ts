@@ -51,28 +51,40 @@ serve(async (req) => {
       }
     }
 
+    // Pre-fetch sub_goal_ids where the user already scheduled a local reminder
+    // (stored in scheduled_reminders by the app). Avoids double-notifying.
+    const userScheduledIds = new Set<string>();
+    if (upcomingIds.length > 0) {
+      const { data: localReminders } = await supabase
+        .from('scheduled_reminders')
+        .select('sub_goal_id, goal_id, user_id')
+        .gte('remind_at', new Date().toISOString())
+        .or(`sub_goal_id.in.(${upcomingIds.join(',')}),goal_id.in.(${[...new Set((upcoming ?? []).map((sg: any) => sg.goal_id))].join(',')})`);
+      for (const row of localReminders ?? []) {
+        // Index by "user_id:sub_goal_id" or "user_id:goal_id" for per-user check
+        if ((row as any).sub_goal_id) userScheduledIds.add(`${(row as any).user_id}:sg:${(row as any).sub_goal_id}`);
+        else userScheduledIds.add(`${(row as any).user_id}:g:${(row as any).goal_id}`);
+      }
+    }
+
     for (const sg of upcoming ?? []) {
       const goal = (sg as any).goals;
       if (!sg.assigned_to || !goal) continue;
 
       if (sentReminderIds.has(sg.id)) continue;
 
-      // Create in-app notification
-      await supabase.from('notifications').insert({
-        user_id: sg.assigned_to,
-        type: 'due_date_reminder',
-        title: '📅 Due tomorrow',
-        body: `"${sg.title}" is due tomorrow. Don't forget!`,
-        data: { sub_goal_id: sg.id, goal_id: sg.goal_id, group_id: goal.group_id },
-      });
+      // Skip if the user already has a local reminder covering this sub-goal or its parent goal
+      const hasLocal =
+        userScheduledIds.has(`${sg.assigned_to}:sg:${sg.id}`) ||
+        userScheduledIds.has(`${sg.assigned_to}:g:${sg.goal_id}`);
+      if (hasLocal) continue;
 
-      // Send push notification
       await supabase.functions.invoke('send-push', {
         body: {
           user_id: sg.assigned_to,
           title: '📅 Due tomorrow',
-          body: `"${sg.title}" is due tomorrow.`,
-          data: { sub_goal_id: sg.id, goal_id: sg.goal_id, group_id: goal.group_id },
+          body: `"${sg.title}" is due tomorrow. Don't forget!`,
+          data: { type: 'due_date_reminder', sub_goal_id: sg.id, goal_id: sg.goal_id, group_id: goal.group_id },
         },
       });
 
@@ -121,20 +133,12 @@ serve(async (req) => {
 
       if (sentMissedIds.has(sg.id)) continue;
 
-      await supabase.from('notifications').insert({
-        user_id: sg.assigned_to,
-        type: 'due_date_missed',
-        title: '⚠️ Action overdue',
-        body: `"${sg.title}" is past due. Update or reschedule it.`,
-        data: { sub_goal_id: sg.id, goal_id: sg.goal_id, group_id: goal.group_id },
-      });
-
       await supabase.functions.invoke('send-push', {
         body: {
           user_id: sg.assigned_to,
           title: '⚠️ Action overdue',
-          body: `"${sg.title}" is past due.`,
-          data: { sub_goal_id: sg.id, goal_id: sg.goal_id, group_id: goal.group_id },
+          body: `"${sg.title}" is past due. Update or reschedule it.`,
+          data: { type: 'due_date_missed', sub_goal_id: sg.id, goal_id: sg.goal_id, group_id: goal.group_id },
         },
       });
     }

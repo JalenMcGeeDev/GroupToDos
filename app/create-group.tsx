@@ -171,7 +171,7 @@ export default function CreateGroupScreen() {
 
   const openSmsComposer = (phone: string) => {
     const message = encodeURIComponent(
-      `Hey! I invited you to join my group on Cogo. Download the app and sign up with this number to get started!`
+      `Hey! I invited you to join my group on Cogo. Download the app here: https://mcg-works.com/cogo/app`
     );
     const separator = Platform.OS === 'ios' ? '&' : '?';
     Linking.openURL(`sms:${phone}${separator}body=${message}`);

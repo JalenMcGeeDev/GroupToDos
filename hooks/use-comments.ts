@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/auth-store';
+import * as Sentry from '@sentry/react-native';
 import type { Comment } from '../lib/types';
 
 // ─── Fetch comments for a goal ───────────────────────────────
@@ -40,6 +41,7 @@ export function useAddGoalComment() {
       });
       if (error) throw error;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'addGoalComment' } }); },
     onSuccess: (_, { goalId }) => {
       queryClient.invalidateQueries({ queryKey: ['comments', goalId] });
     },
@@ -63,6 +65,7 @@ export function useAddVoiceNoteComment() {
       });
       if (error) throw error;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'addVoiceNoteComment' } }); },
     onSuccess: (_, { goalId }) => {
       queryClient.invalidateQueries({ queryKey: ['comments', goalId] });
     },
@@ -76,9 +79,9 @@ export function useDeleteGoalComment() {
 
   return useMutation({
     mutationFn: async ({ commentId }: { commentId: string; goalId: string }) => {
-      const { error } = await supabase.from('comments').delete().eq('id', commentId);
       if (error) throw error;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'deleteGoalComment' } }); },
     onSuccess: (_, { goalId }) => {
       queryClient.invalidateQueries({ queryKey: ['comments', goalId] });
     },

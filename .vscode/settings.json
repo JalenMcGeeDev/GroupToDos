@@ -11,10 +11,17 @@
   "typescript.tsserver.watchOptions": {
     "excludeDirectories": ["**/node_modules"]
   },
+  "typescript.tsserver.exclude": ["**/node_modules/**"],
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "typescript.preferences.includePackageJsonAutoImports": "off",
+  "typescript.tsserver.experimental.enableProjectDiagnostics": false,
   "json.schemas": [
     {
       "fileMatch": ["/node_modules/**/tsconfig*.json"],
       "schema": {}
     }
-  ]
+  ],
+  "typescript.disableAutomaticTypeAcquisition": false,
+  "typescript.tsserver.log": "off"
 }

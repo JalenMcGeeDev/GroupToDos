@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import * as Sentry from '@sentry/react-native';
 import {
   View,
   Text,
@@ -88,6 +89,7 @@ export default function LogActionScreen() {
 
     if (error) {
       console.error('Upload error:', error);
+      Sentry.captureException(new Error(`action-media upload: ${error.message}`), { tags: { context: 'logActionUpload' } });
       return null;
     }
 

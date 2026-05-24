@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
+import * as Sentry from '@sentry/react-native';
 
 const GIPHY_API_KEY = process.env.EXPO_PUBLIC_GIPHY_API_KEY ?? '';
 const GIPHY_BASE = 'https://api.giphy.com/v1/gifs';
@@ -57,6 +58,7 @@ export function useGiphySearch() {
       setTrending(mapGifs(json.data));
     } catch (e) {
       console.warn('Giphy trending fetch failed:', e);
+      Sentry.captureException(e, { tags: { context: 'giphyTrending' } });
     } finally {
       setIsLoading(false);
     }
@@ -82,6 +84,7 @@ export function useGiphySearch() {
         setResults(mapGifs(json.data));
       } catch (e) {
         console.warn('Giphy search failed:', e);
+        Sentry.captureException(e, { tags: { context: 'giphySearch' } });
       } finally {
         setIsLoading(false);
       }

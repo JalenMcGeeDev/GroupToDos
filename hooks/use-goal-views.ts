@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import * as Sentry from '@sentry/react-native';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/auth-store';
 
@@ -56,6 +57,7 @@ export function useMarkGoalViewed() {
         );
       if (error) throw error;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'markGoalViewed' } }); },
     onSuccess: () => {
       // Invalidate all goal-views queries so cards refresh immediately
       queryClient.invalidateQueries({ queryKey: ['goal-views'] });

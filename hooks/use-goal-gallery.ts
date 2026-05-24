@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import * as Sentry from '@sentry/react-native';
 import Constants from 'expo-constants';
 import * as ExpoImagePicker from 'expo-image-picker';
 
@@ -89,6 +90,7 @@ export function useAddGoalPhoto(goalId: string | undefined) {
 
       return urlData.publicUrl;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'addGoalPhoto' } }); },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['goal-gallery', goalId] });
       queryClient.invalidateQueries({ queryKey: ['activity-feed'] });
@@ -149,7 +151,10 @@ export function useDeleteGoalPhoto(goalId: string | undefined) {
         const { error: storageError } = await supabase.storage
           .from('goal-gallery')
           .remove([storagePath]);
-        if (storageError) console.warn('Storage delete error:', storageError);
+        if (storageError) {
+          console.warn('Storage delete error:', storageError);
+          Sentry.captureException(new Error(`Storage delete failed: ${storageError.message}`), { tags: { mutation: 'deleteGoalPhoto' } });
+        }
       }
 
       const { error } = await supabase
@@ -159,6 +164,7 @@ export function useDeleteGoalPhoto(goalId: string | undefined) {
 
       if (error) throw error;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'deleteGoalPhoto' } }); },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['goal-gallery', goalId] });
     },
@@ -234,6 +240,7 @@ export function useTogglePhotoReaction(photoId: string | undefined) {
         if (error) throw error;
       }
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'togglePhotoReaction' } }); },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['photo-reactions', photoId] });
     },

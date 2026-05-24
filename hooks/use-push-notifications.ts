@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { Platform, AppState, AppStateStatus } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
+import * as Sentry from '@sentry/react-native';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/auth-store';
 import { useNotificationStore } from '../stores/notification-store';
@@ -39,6 +40,7 @@ async function registerForPushNotificationsAsync(): Promise<string | null> {
     return tokenData.data;
   } catch (e) {
     console.warn('Failed to get push token:', e);
+    Sentry.captureException(e, { tags: { context: 'getPushToken' } });
     return null;
   }
 }
@@ -55,6 +57,7 @@ async function upsertPushToken(userId: string, token: string) {
 
   if (error) {
     console.warn('Failed to upsert push token:', error.message);
+    Sentry.captureException(new Error(`upsertPushToken: ${error.message}`), { tags: { context: 'pushToken' } });
   }
 }
 
@@ -68,18 +71,32 @@ export function usePushNotifications() {
   useEffect(() => {
     if (!user) return;
 
-    // Register and store push token
+    // Register and store push token on mount
     registerForPushNotificationsAsync().then((token) => {
-      if (token) {
-        upsertPushToken(user.id, token);
-      }
+      if (token) upsertPushToken(user.id, token);
     });
+
+    // Re-register when app returns to foreground (handles re-enabling notifications in Settings)
+    // Also removes stale tokens when permission has been revoked
+    const handleAppStateChange = async (nextState: AppStateStatus) => {
+      if (nextState !== 'active') return;
+      const { status } = await Notifications.getPermissionsAsync();
+      if (status === 'granted') {
+        const token = await registerForPushNotificationsAsync();
+        if (token) upsertPushToken(user.id, token);
+      } else {
+        // Permission revoked in Settings — remove stale tokens so pushes stop
+        await supabase.from('push_tokens').delete().eq('user_id', user.id);
+      }
+    };
+    const appStateSub = AppState.addEventListener('change', handleAppStateChange);
 
     // Listen for notifications received while app is foregrounded
     notificationListener.current = Notifications.addNotificationReceivedListener((notification) => {
       try {
         const data = (notification.request.content.data ?? {}) as Record<string, unknown>;
         const type = typeof data.type === 'string' ? data.type : 'teammate_action';
+        Sentry.addBreadcrumb({ category: 'push', message: `Notification received: ${type}`, level: 'info', data: { type } });
         addNotification({
           id: notification.request.identifier,
           user_id: user.id,
@@ -92,6 +109,7 @@ export function usePushNotifications() {
         } as any);
       } catch (e) {
         console.warn('Failed to handle received notification:', e);
+        Sentry.captureException(e, { tags: { context: 'notificationReceived' } });
       }
     });
 
@@ -99,19 +117,34 @@ export function usePushNotifications() {
     responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
       try {
         const data = (response.notification.request.content.data ?? {}) as Record<string, unknown>;
+        const type = typeof data.type === 'string' ? data.type : 'unknown';
+        Sentry.addBreadcrumb({ category: 'push', message: `Notification tapped: ${type}`, level: 'info', data: { type } });
         const groupId = typeof data.group_id === 'string' ? data.group_id : null;
         const goalId = typeof data.goal_id === 'string' ? data.goal_id : null;
-        if (!groupId) return;
-        router.push({
-          pathname: `/group/${groupId}` as any,
-          params: goalId ? { expandGoal: goalId } : undefined,
-        });
+        if (type === 'checkin_reminder') {
+          router.push('/check-in' as any);
+          return;
+        }
+        if (type === 'group_invite') {
+          router.push('/pending-invites' as any);
+          return;
+        }
+        if (groupId) {
+          router.push({
+            pathname: `/group/${groupId}` as any,
+            params: goalId ? { expandGoal: goalId } : undefined,
+          });
+        } else if (goalId) {
+          router.push({ pathname: '/goal/[goalId]' as any, params: { goalId } });
+        }
       } catch (e) {
         console.warn('Failed to handle notification tap:', e);
+        Sentry.captureException(e, { tags: { context: 'notificationTap' } });
       }
     });
 
     return () => {
+      appStateSub.remove();
       notificationListener.current?.remove();
       responseListener.current?.remove();
     };

@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/auth-store';
+import * as Sentry from '@sentry/react-native';
+import posthog from '../lib/posthog';
 import type { GroupInvite, InviteResult } from '../lib/types';
 
 /** Fetch pending invites for the current user */
@@ -30,16 +32,56 @@ export function useMyPendingInvites() {
 /** Accept a group invite */
 export function useAcceptInvite() {
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
 
   return useMutation({
     mutationFn: async (inviteId: string) => {
+      // Fetch invite details before the RPC changes its status
+      const { data: invite } = await supabase
+        .from('group_invites')
+        .select('invited_by, group_id, groups(name)')
+        .eq('id', inviteId)
+        .single();
+
       const { data, error } = await supabase.rpc('accept_invite', {
         p_invite_id: inviteId,
       });
       if (error) throw error;
+
+      // Send push to the inviter. The RPC already wrote the DB notification row,
+      // so pass persist: false to avoid a duplicate.
+      if (invite && user && invite.invited_by !== user.id) {
+        try {
+          const { data: accepterProfile } = await supabase
+            .from('profiles')
+            .select('display_name')
+            .eq('id', user.id)
+            .single();
+
+          const accepterName = accepterProfile?.display_name ?? 'Someone';
+          const groupName = (invite.groups as any)?.name ?? 'your group';
+
+          await supabase.functions.invoke('send-push', {
+            body: {
+              user_id: invite.invited_by,
+              title: `${accepterName} accepted your invite`,
+              body: `They joined "${groupName}"`,
+              type: 'member_joined',
+              persist: false,
+              data: { type: 'member_joined', group_id: invite.group_id },
+            },
+          });
+        } catch (e) {
+          console.warn('Failed to send accept invite push:', e);
+          Sentry.addBreadcrumb({ category: 'push', message: 'send-push edge function failed (accept invite)', level: 'warning', data: { inviteId } });
+        }
+      }
+
       return data as string; // returns group_id
     },
-    onSuccess: () => {
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'acceptInvite' } }); },
+    onSuccess: (_, inviteId) => {
+      posthog.capture('invite_accepted', { invite_id: inviteId });
       queryClient.invalidateQueries({ queryKey: ['pending-invites'] });
       queryClient.invalidateQueries({ queryKey: ['groups'] });
     },
@@ -57,7 +99,9 @@ export function useDeclineInvite() {
       });
       if (error) throw error;
     },
-    onSuccess: () => {
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'declineInvite' } }); },
+    onSuccess: (_, inviteId) => {
+      posthog.capture('invite_declined', { invite_id: inviteId });
       queryClient.invalidateQueries({ queryKey: ['pending-invites'] });
     },
   });
@@ -127,11 +171,12 @@ export function useInviteToGroup() {
                   user_id: r.resolved_user_id,
                   title: `${inviterName} invited you!`,
                   body: `Join "${groupName}" on CoGoal`,
-                  data: { invite_id: r.invite_id, group_id: groupId },
+                  data: { type: 'group_invite', invite_id: r.invite_id, group_id: groupId },
                 },
               })
               .catch((e) => {
                 console.warn('Push notification failed:', e);
+                Sentry.addBreadcrumb({ category: 'push', message: 'send-push edge function failed (invite)', level: 'warning' });
               })
           )
         );
@@ -139,7 +184,7 @@ export function useInviteToGroup() {
 
       // Surface entries the RPC skipped (invalid format, already a member) so
       // the user sees feedback for every phone they tried to invite.
-      const returnedPhones = new Set(rows.map((r) => r.phone));
+      const returnedPhones = new Set(rows.map((r) => r.phone.replace(/\D/g, '').slice(-10)));
       for (const p of phones) {
         const norm = p.phone.replace(/\D/g, '').slice(-10);
         if (norm.length === 10 && !returnedPhones.has(norm)) {
@@ -154,9 +199,36 @@ export function useInviteToGroup() {
 
       return results;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'inviteToGroup' } }); },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       queryClient.invalidateQueries({ queryKey: ['pending-invites'] });
+      queryClient.invalidateQueries({ queryKey: ['sent-pending-invites'] });
     },
+  });
+}
+
+/** Fetch pending invites sent by the current user for a specific group */
+export function useGroupSentPendingInvites(groupId: string | undefined) {
+  const user = useAuthStore((s) => s.user);
+
+  return useQuery({
+    queryKey: ['sent-pending-invites', groupId, user?.id],
+    queryFn: async (): Promise<GroupInvite[]> => {
+      if (!user || !groupId) return [];
+
+      const { data, error } = await supabase
+        .from('group_invites')
+        .select('*')
+        .eq('group_id', groupId)
+        .eq('invited_by', user.id)
+        .eq('status', 'pending')
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      return (data ?? []) as GroupInvite[];
+    },
+    enabled: !!user && !!groupId,
   });
 }

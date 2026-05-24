@@ -1,17 +1,63 @@
 import '../global.css';
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Animated, Image, AppState, AppStateStatus } from 'react-native';
-import { Slot, useRouter, useSegments } from 'expo-router';
+import { Slot, useRouter, useSegments, usePathname, useNavigationContainerRef } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Updates from 'expo-updates';
+import { isRunningInExpoGo } from 'expo';
+import * as Sentry from '@sentry/react-native';
+
+const navigationIntegration = Sentry.reactNavigationIntegration({
+  enableTimeToInitialDisplay: !isRunningInExpoGo(),
+});
+
+Sentry.init({
+  dsn: 'https://2cfcea0800662174165c00c47e3defec@o4511315428835328.ingest.us.sentry.io/4511315430735872',
+  environment: __DEV__ ? 'development' : 'production',
+  tracesSampleRate: 0.2,
+  integrations: [navigationIntegration],
+  enableNativeFramesTracking: !isRunningInExpoGo(),
+});
 import { useAuthStore } from '../stores/auth-store';
 import { AlertProvider } from '../components/AlertProvider';
 import { CelebrationOverlay } from '../components/CelebrationOverlay';
 import { PersistentTabBar } from '../components/PersistentTabBar';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { usePushNotifications } from '../hooks/use-push-notifications';
+import posthog from '../lib/posthog';
+
+function getScreenName(segments: string[]): string {
+  const [s0, s1, s2, s3] = segments;
+  if (s0 === '(auth)') {
+    if (s1 === 'login') return 'Login';
+    if (s1 === 'onboarding') return 'Onboarding';
+    if (s1 === 'verify') return 'Verify OTP';
+  }
+  if (s0 === '(tabs)') {
+    if (s1 === 'groups' || s1 === undefined) return 'Groups';
+    if (s1 === 'index') return 'My Goals';
+    if (s1 === 'profile') return 'Profile';
+  }
+  if (s0 === 'goal') {
+    if (s1 === 'create') return 'Create Goal';
+    if (s1 === '[goalId]') return 'Goal Detail';
+  }
+  if (s0 === 'group') {
+    if (s2 === 'goal') {
+      if (s3 === 'create') return 'Create Goal (Group)';
+      if (s3 === '[goalId]') return 'Goal Detail (Group)';
+    }
+    return 'Group Detail';
+  }
+  if (s0 === 'create-group') return 'Create Group';
+  if (s0 === 'join-group') return 'Join Group';
+  if (s0 === 'log-action') return 'Log Action';
+  if (s0 === 'pending-invites') return 'Pending Invites';
+  if (s0 === 'check-in') return 'Check In';
+  return 'Unknown';
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,12 +71,22 @@ const queryClient = new QueryClient({
 function AuthGate() {
   const { session, profile, initialized } = useAuthStore();
   const segments = useSegments();
+  const pathname = usePathname();
   const router = useRouter();
   const opacity = useRef(new Animated.Value(1)).current;
   const [showSplash, setShowSplash] = useState(true);
+  // Tracks whether the one-time cold-start redirect (tabs → groups) has already fired.
+  // Without this, every tap on the Goals (index) tab gets bounced back to groups.
+  const hasInitialRedirected = useRef(false);
 
   // Register for push notifications when authenticated
   usePushNotifications();
+
+  useEffect(() => {
+    if (!initialized || segments.length === 0) return;
+    const screenName = getScreenName(segments as string[]);
+    posthog.screen(screenName, { path: pathname });
+  }, [pathname]);
 
   // Navigation logic
   useEffect(() => {
@@ -51,15 +107,25 @@ function AuthGate() {
         console.log('[AuthGate] → replacing with login');
         router.replace('/(auth)/login');
       }
-    } else if (!profile?.onboarding_completed) {
-      // Signed in but hasn't completed onboarding
+    } else if (profile !== null && !profile.onboarding_completed) {
+      // Signed in but hasn't completed onboarding.
+      // Guard: if profile is still null (loading), don't route — wait for it to arrive.
       if (segments[1] !== 'onboarding') {
         console.log('[AuthGate] → replacing with onboarding');
         router.replace('/(auth)/onboarding');
       }
     } else {
-      // Fully authenticated — redirect to tabs if stuck in auth screens or on initial empty route
-      if (inAuthGroup || segments.length === 0) {
+      // Redirect to groups if coming from auth screens or on the initial empty route.
+      // The onTabsIndex check only fires once (cold-start Expo Router restoring to index)
+      // — after that, tapping the Goals tab is intentional and should not redirect.
+      const onTabsIndex = segments[0] === '(tabs)' && (segments[1] === 'index' || segments[1] === undefined);
+      const shouldRedirectToGroups =
+        inAuthGroup ||
+        segments.length === 0 ||
+        (onTabsIndex && !hasInitialRedirected.current);
+
+      if (shouldRedirectToGroups) {
+        hasInitialRedirected.current = true;
         console.log('[AuthGate] → replacing with groups tab');
         router.replace('/(tabs)/groups');
       }
@@ -80,7 +146,7 @@ function AuthGate() {
 
     const destinedForAuth = !session;
     const destinedForTabs = !!session && !!profile?.onboarding_completed;
-    const destinedForOnboarding = !!session && !profile?.onboarding_completed;
+    const destinedForOnboarding = !!session && profile !== null && !profile.onboarding_completed;
 
     const atCorrectScreen =
       (destinedForAuth && inAuthGroup && segments[1] !== 'onboarding') ||
@@ -100,7 +166,8 @@ function AuthGate() {
   const onGoalCreate = segments.includes('create') && segments.includes('goal');
   const onGoalDetail = segments.includes('goal') && !onGoalCreate;
   const onGroupScreen = segments[0] === 'group';
-  const showTabBar = initialized && !!session && !inAuthGroup && !onGoalCreate && !onGoalDetail && !onGroupScreen;
+  const onCheckIn = segments.includes('check-in');
+  const showTabBar = initialized && !!session && !inAuthGroup && !onGoalCreate && !onGoalDetail && !onGroupScreen && !onCheckIn;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F7F5F2' }}>
@@ -134,8 +201,15 @@ function AuthGate() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
+  const ref = useNavigationContainerRef();
   const initialize = useAuthStore((s) => s.initialize);
+
+  useEffect(() => {
+    if (ref) {
+      navigationIntegration.registerNavigationContainer(ref);
+    }
+  }, [ref]);
 
   useEffect(() => {
     initialize();
@@ -180,3 +254,5 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+export default Sentry.wrap(RootLayout);

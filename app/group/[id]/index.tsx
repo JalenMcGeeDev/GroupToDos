@@ -43,7 +43,7 @@ const STOCK_COVERS = [
   { url: 'https://images.unsplash.com/photo-1511300636408-a63a89df3482?w=800&q=80', label: 'Sunrise' },
 ];
 import { useGroup, useLeaveGroup, useUpdateGroup } from '../../../hooks/use-groups';
-import { useInviteToGroup } from '../../../hooks/use-invites';
+import { useInviteToGroup, useGroupSentPendingInvites } from '../../../hooks/use-invites';
 import { useGoals } from '../../../hooks/use-goals';
 import { useGoalViews } from '../../../hooks/use-goal-views';
 import { useActivityFeed } from '../../../hooks/use-activity';
@@ -67,6 +67,7 @@ export default function GroupDetailScreen() {
   const { data: goalViewMap = {} } = useGoalViews(goalIds);
   const { data: feedItems = [] } = useActivityFeed(id!);
   const inviteToGroup = useInviteToGroup();
+  const { data: sentPendingInvites = [] } = useGroupSentPendingInvites(id);
 
   const [activeTab, setActiveTab] = useState<Tab>('goals');
   const [refreshing, setRefreshing] = useState(false);
@@ -232,7 +233,7 @@ export default function GroupDetailScreen() {
 
   const openSmsComposer = (phone: string) => {
     const message = encodeURIComponent(
-      `Hey! I invited you to join my group "${group?.name ?? ''}" on Cogo. Download the app and sign up with this number!`
+      `Hey! I invited you to join my group "${group?.name ?? ''}" on Cogo. Download the app here: https://mcg-works.com/cogo/app`
     );
     const separator = Platform.OS === 'ios' ? '&' : '?';
     Linking.openURL(`sms:${phone}${separator}body=${message}`);
@@ -307,10 +308,11 @@ export default function GroupDetailScreen() {
           </View>
           {activeTab === 'goals' ? (
             <Pressable
-              className="w-10 h-10 rounded-xl bg-gray-50 items-center justify-center"
+              className="flex-row items-center rounded-xl bg-gray-50 px-3 h-10"
               onPress={() => router.push(`/group/${id}/goal/create` as any)}
             >
               <Feather name="plus" size={18} color="#525252" />
+              <Text className="ml-1.5 text-sm font-semibold" style={{ color: '#525252' }}>Goal</Text>
             </Pressable>
           ) : (
             <View style={{ width: 40 }} />
@@ -691,6 +693,43 @@ export default function GroupDetailScreen() {
               </ScrollView>
             ) : (
               <>
+                {/* Pending invites */}
+                {sentPendingInvites.length > 0 && (
+                  <>
+                    <Text className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                      Pending Invites
+                    </Text>
+                    <ScrollView style={{ maxHeight: 160 }} className="mb-1">
+                      {sentPendingInvites.map((invite, index) => (
+                        <View
+                          key={invite.id}
+                          className="flex-row items-center py-2"
+                          style={index > 0 ? { borderTopWidth: 1, borderTopColor: '#F3F4F6' } : undefined}
+                        >
+                          <View className="w-8 h-8 rounded-full bg-amber-50 items-center justify-center">
+                            <Feather name="clock" size={12} color="#F59E0B" />
+                          </View>
+                          <View className="flex-1 ml-2.5">
+                            <Text className="text-base font-medium text-gray-900">
+                              {invite.name ?? invite.phone}
+                            </Text>
+                            {invite.name && (
+                              <Text className="text-xs text-gray-400">{invite.phone}</Text>
+                            )}
+                          </View>
+                          <Pressable
+                            className="px-3 py-1.5 rounded-lg bg-gray-100"
+                            onPress={() => openSmsComposer(invite.phone)}
+                          >
+                            <Text className="text-xs font-medium" style={{ color: COLORS.primary }}>Text</Text>
+                          </Pressable>
+                        </View>
+                      ))}
+                    </ScrollView>
+                    <View className="h-px bg-gray-100 my-3" />
+                  </>
+                )}
+
                 {/* Added invitees */}
                 {inviteList.map((invitee, index) => (
                   <View key={index} className="flex-row items-center py-2" style={index > 0 ? { borderTopWidth: 1, borderTopColor: '#F3F4F6' } : undefined}>

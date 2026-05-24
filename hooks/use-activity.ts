@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/auth-store';
+import * as Sentry from '@sentry/react-native';
+import posthog from '../lib/posthog';
 import type { FeedItem, Comment } from '../lib/types';
 
 export function useActivityFeed(groupId: string, limit = 50) {
@@ -69,6 +71,7 @@ export function useAddComment() {
       if (error) throw error;
       return data as Comment;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'addComment' } }); },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ['comments', variables.targetType, variables.targetId],
@@ -110,7 +113,15 @@ export function useLogAction() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'logAction' } }); },
+    onSuccess: (_, variables) => {
+      Sentry.addBreadcrumb({ category: 'action', message: 'User logged an action', level: 'info' });
+      posthog.capture('action_logged', {
+        sub_goal_id: variables.subGoalId,
+        has_note: !!variables.note,
+        has_media: !!variables.mediaUrl,
+        value: variables.value ?? 1,
+      });
       // Invalidate without forcing immediate refetch of inactive queries
       queryClient.invalidateQueries({ queryKey: ['goals'], refetchType: 'active' });
       queryClient.invalidateQueries({ queryKey: ['goal'], refetchType: 'active' });

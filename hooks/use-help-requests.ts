@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/auth-store';
+import * as Sentry from '@sentry/react-native';
+import posthog from '../lib/posthog';
 import type { HelpRequest } from '../lib/types';
 
 /**
@@ -57,7 +59,9 @@ export function useAskForHelp() {
       if (error) throw error;
       return data as HelpRequest;
     },
-    onSuccess: () => {
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'askForHelp' } }); },
+    onSuccess: (_, variables) => {
+      posthog.capture('help_requested', { goal_id: variables.goalId, group_id: variables.groupId });
       queryClient.invalidateQueries({ queryKey: ['help-requests'] });
       queryClient.invalidateQueries({ queryKey: ['activity-feed'] });
     },
@@ -79,6 +83,7 @@ export function useResolveHelp() {
       if (error) throw error;
       return data as HelpRequest;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'resolveHelp' } }); },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['help-requests'] });
       queryClient.invalidateQueries({ queryKey: ['activity-feed'] });

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import * as Sentry from '@sentry/react-native';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import {
@@ -92,6 +93,7 @@ export function VoiceNoteRecorder({ onSend, onCancel }: VoiceNoteRecorderProps) 
       onSend(path);
     } catch (e) {
       console.warn('Voice note upload failed:', e);
+      Sentry.captureException(e, { tags: { context: 'voiceNoteUpload' } });
       setPhase('error');
     }
   }, [localUri, user, localPlayer, onSend, onCancel]);
@@ -141,6 +143,7 @@ export function VoiceNoteRecorder({ onSend, onCancel }: VoiceNoteRecorderProps) 
         }, 1000);
       } catch (e) {
         console.warn('Failed to start recording:', e);
+        Sentry.captureException(e, { tags: { context: 'voiceNoteStartRecording' } });
         if (!cancelled) onCancel();
       }
     })();

@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import * as ExpoImagePicker from 'expo-image-picker';
@@ -34,6 +35,7 @@ const CADENCE_OPTIONS: CheckinCadence[] = ['daily', 'every_2_days', 'every_3_day
 
 export default function ProfileScreen() {
   const { profile, user, updateProfile, signOut } = useAuthStore();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { data: goals } = useMyGoals();
   const { data: groups } = useGroups();
@@ -251,6 +253,22 @@ export default function ProfileScreen() {
     : profile.checkin_cadence === 'every_2_days' || profile.checkin_cadence === 'every_3_days'
       ? 'Check-in streak'
       : 'Day streak';
+
+  // Streak modal: "no check-in due" state
+  const todayStr = new Date().toISOString().split('T')[0];
+  const checkedInToday = profile.last_action_date === todayStr;
+  const checkinDueDays = cadenceMultiplier;
+  const nextDueDate = (() => {
+    if (!profile.last_action_date) return todayStr;
+    const last = new Date(profile.last_action_date);
+    last.setDate(last.getDate() + checkinDueDays);
+    return last.toISOString().split('T')[0];
+  })();
+  const checkinDueToday = !checkedInToday && nextDueDate <= todayStr;
+  const noCheckinDue = !checkinDueToday;
+  const nextDueDateFormatted = new Date(nextDueDate + 'T12:00:00').toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric',
+  });
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50">
@@ -498,24 +516,49 @@ export default function ProfileScreen() {
             <View className="items-center mb-4">
               <View
                 className="w-14 h-14 rounded-2xl items-center justify-center mb-3"
-                style={{ backgroundColor: '#FB923C15' }}
+                style={{ backgroundColor: flameColor + '15' }}
               >
-                <Feather name="zap" size={24} color="#FB923C" />
+                <Feather name="zap" size={24} color={flameColor} />
               </View>
               <Text className="text-lg font-bold text-gray-900">Your Streak</Text>
             </View>
-            <Text className="text-base text-gray-500 text-center leading-5 mb-1">
-              Your streak counts consecutive check-ins based on your cadence (currently:{' '}
-              <Text className="font-semibold text-gray-700">
-                {CADENCE_LABELS[profile?.checkin_cadence ?? 'daily']?.toLowerCase() ?? 'daily'}
-              </Text>
-              ).
-            </Text>
-            <Text className="text-base text-gray-500 text-center leading-5 mb-5">
-              Keep logging actions on time to grow your streak!
-            </Text>
+
+            {noCheckinDue ? (
+              <>
+                <Text className="text-2xl font-bold text-center text-gray-900 mb-1">
+                  No check-in due today
+                </Text>
+                <Text className="text-sm text-gray-400 text-center mb-5">
+                  {checkedInToday
+                    ? "You've already checked in today — great work!"
+                    : "You're on track. Keep it up!"}
+                </Text>
+                <View className="bg-gray-50 rounded-xl py-3 px-4 items-center mb-5">
+                  <Text className="text-xs text-gray-400 uppercase tracking-wider mb-0.5">Next check-in</Text>
+                  <Text className="text-base font-semibold text-gray-800">{nextDueDateFormatted}</Text>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text className="text-base text-gray-500 text-center leading-5 mb-1">
+                  Your streak counts consecutive check-ins based on your cadence (currently:{' '}
+                  <Text className="font-semibold text-gray-700">
+                    {CADENCE_LABELS[profile?.checkin_cadence ?? 'daily']?.toLowerCase() ?? 'daily'}
+                  </Text>
+                  ).
+                </Text>
+                <Text className="text-base text-gray-500 text-center leading-5 mb-3">
+                  Complete today's check-in before midnight to keep your streak going!
+                </Text>
+                <View className="bg-orange-50 rounded-xl py-3 px-4 items-center mb-5">
+                  <Text className="text-xs text-orange-400 uppercase tracking-wider mb-0.5">Due by</Text>
+                  <Text className="text-base font-semibold text-orange-700">Tonight at 11:59 PM</Text>
+                </View>
+              </>
+            )}
+
             <Text className="text-xs text-gray-400 text-center mb-4">
-              You can adjust your check-in cadence in the settings below.
+              Adjust your check-in cadence in the settings below.
             </Text>
             <Pressable
               className="py-2.5 items-center"

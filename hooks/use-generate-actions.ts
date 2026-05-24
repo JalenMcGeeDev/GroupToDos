@@ -1,4 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
+import * as Sentry from '@sentry/react-native';
 import { supabase } from '../lib/supabase';
 import { GenerateActionsResponse } from '../lib/types';
 
@@ -23,5 +24,6 @@ export function useGenerateActions() {
 
       return data as GenerateActionsResponse;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'generateActions' } }); },
   });
 }

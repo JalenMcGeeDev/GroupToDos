@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/auth-store';
+import * as Sentry from '@sentry/react-native';
+import posthog from '../lib/posthog';
 import type { Profile } from '../lib/types';
 
 // ─── Types ──────────────────────────────────────────────────
@@ -126,7 +128,9 @@ export function useAddReaction() {
       if (error) throw error;
       return data;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'addReaction' } }); },
     onSuccess: (_, variables) => {
+      posthog.capture('reaction_added', { goal_id: variables.goalId, reaction_type: variables.reactionType });
       queryClient.invalidateQueries({ queryKey: ['reactions', variables.goalId] });
       queryClient.invalidateQueries({ queryKey: ['reactions-raw', variables.goalId] });
       queryClient.invalidateQueries({ queryKey: ['activity-feed'] });
@@ -159,6 +163,7 @@ export function useRemoveReaction() {
 
       if (error) throw error;
     },
+    onError: (error) => { Sentry.captureException(error, { tags: { mutation: 'removeReaction' } }); },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['reactions', variables.goalId] });
       queryClient.invalidateQueries({ queryKey: ['reactions-raw', variables.goalId] });

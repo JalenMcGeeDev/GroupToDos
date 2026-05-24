@@ -24,6 +24,7 @@ const EVENT_CONFIG: Record<string, { icon: string; color: string; bg: string }> 
   help_offered:            { icon: 'life-buoy',    color: '#0D9488', bg: '#F0FDFA' },
   goal_reaction:           { icon: 'heart',        color: '#EC4899', bg: '#FDF2F8' },
   goal_photo_added:        { icon: 'image',        color: '#8B5CF6', bg: '#EDE9FE' },
+  intention_shared:        { icon: 'edit-3',       color: '#8B5CF6', bg: '#EDE9FE' },
 };
 
 export function ActivityFeed({ items, isLoading, onRefresh, refreshing }: ActivityFeedProps) {

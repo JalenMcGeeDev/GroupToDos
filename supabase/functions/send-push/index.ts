@@ -10,6 +10,8 @@ interface PushPayload {
   user_id: string;
   title: string;
   body: string;
+  type?: string;
+  persist?: boolean;
   data?: Record<string, unknown>;
 }
 
@@ -25,13 +27,25 @@ serve(async (req) => {
     );
 
     const payload: PushPayload = await req.json();
-    const { user_id, title, body, data } = payload;
+    const { user_id, title, body, type, persist = true, data } = payload;
 
     if (!user_id || !title) {
       return new Response(
         JSON.stringify({ error: 'user_id and title are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // Always persist an in-app notification row (best effort), unless caller opts out
+    if (persist !== false) {
+      const notifType = type ?? (typeof data?.type === 'string' ? data.type : 'push');
+      await supabase.from('notifications').insert({
+        user_id,
+        type: notifType,
+        title,
+        body,
+        data: data ?? {},
+      });
     }
 
     // Fetch all push tokens for this user

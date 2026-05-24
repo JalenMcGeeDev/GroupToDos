@@ -36,7 +36,7 @@ export function PersistentTabBar() {
         position: 'absolute',
         left: 0,
         right: 0,
-        bottom: 0,
+        bottom: 10,
         paddingHorizontal: 20,
         paddingTop: 8,
         paddingBottom: insets.bottom > 0 ? insets.bottom : 12,
@@ -82,20 +82,18 @@ export function PersistentTabBar() {
                 size={20}
                 color={active ? '#FFFFFF' : '#7A716A'}
               />
-              {active && (
-                <Text
-                  style={{
-                    marginLeft: 8,
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: '#FFFFFF',
-                    letterSpacing: 0.1,
-                  }}
-                  numberOfLines={1}
-                >
-                  {tab.label}
-                </Text>
-              )}
+              <Text
+                style={{
+                  marginLeft: 8,
+                  fontSize: 14,
+                  fontWeight: '600',
+                  color: active ? '#FFFFFF' : '#7A716A',
+                  letterSpacing: 0.1,
+                }}
+                numberOfLines={1}
+              >
+                {tab.label}
+              </Text>
             </Pressable>
           );
         })}
